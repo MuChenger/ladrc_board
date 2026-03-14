@@ -54,7 +54,6 @@
 					"${project}/Testcase",
 					"${project}/Components/display/oled",
 					"${project}/Components/flash/sfud",
-					"${project}/Components/simulation",
 					"${project}/Components/display/tft/st7735s",
 					"${project}/Components/utilities/multitimer",
 					"${project}/Components/flash/w25q16",

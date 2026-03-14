@@ -289,7 +289,7 @@
             </toolChain>
           </folderInfo>
           <sourceEntries>
-            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/imu/mpu6050/eMPL|Testcase|Components/display/oled|Components/flash/sfud|Components/simulation|Components/display/tft/st7735s|Components/utilities/multitimer|Components/flash/w25q16|Components/Encoder_Speed|Components/algorithm/ladrc|Components/imu/mpu6050" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/imu/mpu6050/eMPL|Testcase|Components/display/oled|Components/flash/sfud|Components/display/tft/st7735s|Components/utilities/multitimer|Components/flash/w25q16|Components/Encoder_Speed|Components/algorithm/ladrc|Components/imu/mpu6050" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
           </sourceEntries>
         </configuration>
       </storageModule>

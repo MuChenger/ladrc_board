@@ -5,6 +5,7 @@
 #include "MultiTimer.h"
 #include "LADRC.h"
 #include "vofa.h"
+#include "usr_printf.h"
 
 #define Simulation_Cycle 5
 

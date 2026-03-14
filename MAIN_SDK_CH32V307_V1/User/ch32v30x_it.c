@@ -1,5 +1,10 @@
 #include "ch32v30x_it.h"
 
+#include "chry_ringbuffer.h"
+
+extern chry_ringbuffer_t chry_rbuffer_tid;
+extern uint8_t g_recvFinshFlag;
+
 volatile uint32_t timer6_tick = 0;
 
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
@@ -8,6 +13,7 @@ void TIM2_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM6_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM7_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USART2_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
+
 
 void NMI_Handler(void)
 {
@@ -63,17 +69,17 @@ void TIM7_IRQHandler(void)
 }
 
 
-//void USART2_IRQHandler(void)
-//{
-//    if (USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
-//    {
-//        uint8_t res = USART_ReceiveData(USART2);
-//        chry_ringbuffer_write_byte(&chry_rbuffer_tid, res);
-//    }
-//    else if (USART_GetITStatus(USART2, USART_IT_IDLE) != RESET)
-//    {
-//        volatile uint16_t temp = USART2->STATR;
-//        temp = USART2->DATAR;
-//        g_recvFinshFlag = 1;
-//    }
-//}
+void USART2_IRQHandler(void)
+{
+   if (USART_GetITStatus(USART2, USART_IT_RXNE) != RESET)
+   {
+       uint8_t res = USART_ReceiveData(USART2);
+       chry_ringbuffer_write_byte(&chry_rbuffer_tid, res);
+   }
+   else if (USART_GetITStatus(USART2, USART_IT_IDLE) != RESET)
+   {
+       volatile uint16_t temp = USART2->STATR;
+       temp = USART2->DATAR;
+       g_recvFinshFlag = 1;
+   }
+}
