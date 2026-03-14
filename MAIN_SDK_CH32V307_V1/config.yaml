@@ -116,11 +116,11 @@ on_chip_peripherals:
       enabled: true
       pins:
       - name: SCL
-        pin: PB8
+        pin: PB10
       - name: SDA
-        pin: PB9
+        pin: PB11
     - name: I2C3
-      enabled: true
+      enabled: false
       pins:
       - name: SCL
         pin: PA8
