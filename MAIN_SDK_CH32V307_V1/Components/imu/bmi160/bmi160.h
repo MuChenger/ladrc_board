@@ -35,6 +35,16 @@ typedef struct
 } BMI160_Axes_t;
 
 /**
+ * @brief   Floating-point 3-axis sensor sample.
+ */
+typedef struct
+{
+    float x;
+    float y;
+    float z;
+} BMI160_AxesF_t;
+
+/**
  * @brief   Default BMI160 I2C address with SDIO tied low.
  */
 #define BMI160_I2C_ADDR_LOW      (0x68U << 1)
@@ -56,7 +66,9 @@ int8_t BMI160_ReadChipId(uint8_t *chip_id);
 int8_t BMI160_ReadAccel(BMI160_Axes_t *accel);
 int8_t BMI160_ReadGyro(BMI160_Axes_t *gyro);
 int8_t BMI160_ReadAccelGyro(BMI160_Axes_t *accel, BMI160_Axes_t *gyro);
-int8_t BMI160_ReadTemperatureRaw(int16_t *raw_temp);
+int8_t BMI160_ReadAccelG(BMI160_AxesF_t *accel_g);
+int8_t BMI160_ReadGyroDps(BMI160_AxesF_t *gyro_dps);
+int8_t BMI160_ReadAccelGyroScaled(BMI160_AxesF_t *accel_g, BMI160_AxesF_t *gyro_dps);
 int8_t BMI160_ReadTemperatureC(float *temperature_c);
 
 #ifdef __cplusplus

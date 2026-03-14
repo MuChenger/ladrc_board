@@ -4,11 +4,8 @@
  */
 
 #include "bmi160.h"
-
 #include "debug.h"
 #include "i2c.h"
-
-#if defined(SDK_USING_I2C2)
 
 #define BMI160_I2C_PORT                  I2C2
 #define BMI160_I2C_CLOCK_HZ              100000U
@@ -18,12 +15,12 @@
 #define BMI160_REG_CHIP_ID               0x00U
 #define BMI160_REG_GYRO_DATA             0x0CU
 #define BMI160_REG_ACCEL_DATA            0x12U
-#define BMI160_REG_TEMP_DATA             0x20U
 #define BMI160_REG_ACCEL_CONF            0x40U
 #define BMI160_REG_ACCEL_RANGE           0x41U
 #define BMI160_REG_GYRO_CONF             0x42U
 #define BMI160_REG_GYRO_RANGE            0x43U
 #define BMI160_REG_CMD                   0x7EU
+#define BMI160_REG_TEMP_DATA             0x20U
 
 #define BMI160_CMD_SOFT_RESET            0xB6U
 #define BMI160_CMD_ACCEL_NORMAL          0x11U
@@ -36,6 +33,9 @@
 #define BMI160_GYRO_ODR_100HZ            0x08U
 #define BMI160_GYRO_BW_NORMAL_MODE       0x02U
 #define BMI160_GYRO_RANGE_2000_DPS       0x00U
+
+#define BMI160_ACCEL_LSB_PER_G           16384.0f
+#define BMI160_GYRO_LSB_PER_DPS          16.4f
 
 #define BMI160_ACCEL_STARTUP_DELAY_MS    5U
 #define BMI160_GYRO_STARTUP_DELAY_MS     81U
@@ -84,10 +84,6 @@ static int8_t BMI160_WriteRegs(uint8_t reg_addr, const uint8_t *data, uint16_t l
     int8_t status;
     uint16_t index;
 
-    if ((data == 0) && (len > 0U)) {
-        return BMI160_E_NULL_PTR;
-    }
-
     status = BMI160_WaitBusyReset();
     if (status != BMI160_OK) {
         BMI160_I2CBusRecover();
@@ -131,10 +127,6 @@ static int8_t BMI160_ReadRegs(uint8_t reg_addr, uint8_t *data, uint16_t len)
 {
     int8_t status;
     uint16_t index;
-
-    if ((data == 0) || (len == 0U)) {
-        return BMI160_E_NULL_PTR;
-    }
 
     status = BMI160_WaitBusyReset();
     if (status != BMI160_OK) {
@@ -200,248 +192,147 @@ static int8_t BMI160_WriteByte(uint8_t reg_addr, uint8_t value)
     return BMI160_WriteRegs(reg_addr, &value, 1U);
 }
 
-static int8_t BMI160_ParseAxes(uint8_t start_reg, BMI160_Axes_t *axes)
+static void BMI160_DecodeAxes(const uint8_t *raw, BMI160_Axes_t *axes)
 {
-    uint8_t raw[6];
-    int8_t status;
-
-    if (axes == 0) {
-        return BMI160_E_NULL_PTR;
-    }
-
-    status = BMI160_ReadRegs(start_reg, raw, sizeof(raw));
-    if (status != BMI160_OK) {
-        return status;
-    }
-
     axes->x = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
     axes->y = (int16_t)(((uint16_t)raw[3] << 8) | raw[2]);
     axes->z = (int16_t)(((uint16_t)raw[5] << 8) | raw[4]);
-
-    return BMI160_OK;
 }
 
-int8_t BMI160_SoftReset(void)
+static void BMI160_ScaleAxes(const BMI160_Axes_t *raw_axes, BMI160_AxesF_t *scaled_axes, float lsb_per_unit)
+{
+    scaled_axes->x = (float)raw_axes->x / lsb_per_unit;
+    scaled_axes->y = (float)raw_axes->y / lsb_per_unit;
+    scaled_axes->z = (float)raw_axes->z / lsb_per_unit;
+}
+
+static int8_t BMI160_Configure(void)
 {
     int8_t status;
 
-    status = BMI160_WriteByte(BMI160_REG_CMD, BMI160_CMD_SOFT_RESET);
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    Delay_Ms(BMI160_SOFT_RESET_DELAY_MS);
-    return BMI160_OK;
-}
-
-int8_t BMI160_ReadChipId(uint8_t *chip_id)
-{
-    if (chip_id == 0) {
-        return BMI160_E_NULL_PTR;
-    }
-
-    return BMI160_ReadRegs(BMI160_REG_CHIP_ID, chip_id, 1U);
-}
-
-int8_t BMI160_Init(uint8_t dev_addr)
-{
-    uint8_t chip_id;
-    uint8_t accel_conf;
-    uint8_t gyro_conf;
-    int8_t status;
-
-    bmi160_dev_addr = dev_addr;
-
-    I2C_GPIO_Init(BMI160_I2C_CLOCK_HZ, BMI160_I2C_OWN_ADDRESS);
-
-    status = BMI160_ReadChipId(&chip_id);
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    if (chip_id != BMI160_CHIP_ID_VALUE) {
-        return BMI160_E_NOT_FOUND;
-    }
-
-    status = BMI160_SoftReset();
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    accel_conf = (uint8_t)((BMI160_ACCEL_BW_NORMAL_AVG4 << 4) | BMI160_ACCEL_ODR_100HZ);
-    gyro_conf = (uint8_t)((BMI160_GYRO_BW_NORMAL_MODE << 4) | BMI160_GYRO_ODR_100HZ);
-
-    status = BMI160_WriteByte(BMI160_REG_ACCEL_CONF, accel_conf);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    status = BMI160_WriteByte(BMI160_REG_ACCEL_CONF,
+        (uint8_t)((BMI160_ACCEL_BW_NORMAL_AVG4 << 4) | BMI160_ACCEL_ODR_100HZ));
+    if (status != BMI160_OK) return status;
 
     status = BMI160_WriteByte(BMI160_REG_ACCEL_RANGE, BMI160_ACCEL_RANGE_2G);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    if (status != BMI160_OK) return status;
 
-    status = BMI160_WriteByte(BMI160_REG_GYRO_CONF, gyro_conf);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    status = BMI160_WriteByte(BMI160_REG_GYRO_CONF,
+        (uint8_t)((BMI160_GYRO_BW_NORMAL_MODE << 4) | BMI160_GYRO_ODR_100HZ));
+    if (status != BMI160_OK) return status;
 
     status = BMI160_WriteByte(BMI160_REG_GYRO_RANGE, BMI160_GYRO_RANGE_2000_DPS);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    if (status != BMI160_OK) return status;
 
     status = BMI160_WriteByte(BMI160_REG_CMD, BMI160_CMD_ACCEL_NORMAL);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    if (status != BMI160_OK) return status;
     Delay_Ms(BMI160_ACCEL_STARTUP_DELAY_MS);
 
     status = BMI160_WriteByte(BMI160_REG_CMD, BMI160_CMD_GYRO_NORMAL);
-    if (status != BMI160_OK) {
-        return status;
-    }
+    if (status != BMI160_OK) return status;
     Delay_Ms(BMI160_GYRO_STARTUP_DELAY_MS);
 
     return BMI160_OK;
 }
 
-int8_t BMI160_InitAuto(void)
+int8_t BMI160_ReadChipId(uint8_t *chip_id)
 {
+    return BMI160_ReadRegs(BMI160_REG_CHIP_ID, chip_id, 1U);
+}
+
+int8_t BMI160_SoftReset(void)
+{
+    int8_t status = BMI160_WriteByte(BMI160_REG_CMD, BMI160_CMD_SOFT_RESET);
+    if (status == BMI160_OK) Delay_Ms(BMI160_SOFT_RESET_DELAY_MS);
+    return status;
+}
+
+int8_t BMI160_Init(uint8_t dev_addr)
+{
+    uint8_t chip_id;
     int8_t status;
 
-    status = BMI160_Init(BMI160_I2C_ADDR_LOW);
-    if (status == BMI160_OK) {
-        return BMI160_OK;
-    }
+    bmi160_dev_addr = dev_addr;
+    I2C_GPIO_Init(BMI160_I2C_CLOCK_HZ, BMI160_I2C_OWN_ADDRESS);
 
-    status = BMI160_Init(BMI160_I2C_ADDR_HIGH);
-    if (status == BMI160_OK) {
-        return BMI160_OK;
-    }
+    status = BMI160_ReadChipId(&chip_id);
+    if (status != BMI160_OK) return status;
 
-    return status;
+    if (chip_id != BMI160_CHIP_ID_VALUE) return BMI160_E_NOT_FOUND;
+
+    status = BMI160_SoftReset();
+    if (status != BMI160_OK) return status;
+
+    return BMI160_Configure();
+}
+
+int8_t BMI160_InitAuto(void)
+{
+    int8_t status = BMI160_Init(BMI160_I2C_ADDR_LOW);
+    return (status == BMI160_OK) ? BMI160_OK : BMI160_Init(BMI160_I2C_ADDR_HIGH);
 }
 
 int8_t BMI160_ReadAccel(BMI160_Axes_t *accel)
 {
-    return BMI160_ParseAxes(BMI160_REG_ACCEL_DATA, accel);
+    uint8_t raw[6];
+    int8_t status = BMI160_ReadRegs(BMI160_REG_ACCEL_DATA, raw, sizeof(raw));
+    if (status == BMI160_OK) BMI160_DecodeAxes(raw, accel);
+    return status;
 }
 
 int8_t BMI160_ReadGyro(BMI160_Axes_t *gyro)
 {
-    return BMI160_ParseAxes(BMI160_REG_GYRO_DATA, gyro);
+    uint8_t raw[6];
+    int8_t status = BMI160_ReadRegs(BMI160_REG_GYRO_DATA, raw, sizeof(raw));
+    if (status == BMI160_OK) BMI160_DecodeAxes(raw, gyro);
+    return status;
 }
 
 int8_t BMI160_ReadAccelGyro(BMI160_Axes_t *accel, BMI160_Axes_t *gyro)
 {
     uint8_t raw[12];
-    int8_t status;
-
-    if ((accel == 0) || (gyro == 0)) {
-        return BMI160_E_NULL_PTR;
+    int8_t status = BMI160_ReadRegs(BMI160_REG_GYRO_DATA, raw, sizeof(raw));
+    if (status == BMI160_OK) {
+        BMI160_DecodeAxes(raw, gyro);
+        BMI160_DecodeAxes(&raw[6], accel);
     }
-
-    status = BMI160_ReadRegs(BMI160_REG_GYRO_DATA, raw, sizeof(raw));
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    gyro->x = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
-    gyro->y = (int16_t)(((uint16_t)raw[3] << 8) | raw[2]);
-    gyro->z = (int16_t)(((uint16_t)raw[5] << 8) | raw[4]);
-
-    accel->x = (int16_t)(((uint16_t)raw[7] << 8) | raw[6]);
-    accel->y = (int16_t)(((uint16_t)raw[9] << 8) | raw[8]);
-    accel->z = (int16_t)(((uint16_t)raw[11] << 8) | raw[10]);
-
-    return BMI160_OK;
+    return status;
 }
 
-int8_t BMI160_ReadTemperatureRaw(int16_t *raw_temp)
+int8_t BMI160_ReadAccelG(BMI160_AxesF_t *accel_g)
+{
+    BMI160_Axes_t raw;
+    int8_t status = BMI160_ReadAccel(&raw);
+    if (status == BMI160_OK) BMI160_ScaleAxes(&raw, accel_g, BMI160_ACCEL_LSB_PER_G);
+    return status;
+}
+
+int8_t BMI160_ReadGyroDps(BMI160_AxesF_t *gyro_dps)
+{
+    BMI160_Axes_t raw;
+    int8_t status = BMI160_ReadGyro(&raw);
+    if (status == BMI160_OK) BMI160_ScaleAxes(&raw, gyro_dps, BMI160_GYRO_LSB_PER_DPS);
+    return status;
+}
+
+int8_t BMI160_ReadAccelGyroScaled(BMI160_AxesF_t *accel_g, BMI160_AxesF_t *gyro_dps)
+{
+    BMI160_Axes_t accel_raw, gyro_raw;
+    int8_t status = BMI160_ReadAccelGyro(&accel_raw, &gyro_raw);
+    if (status == BMI160_OK) {
+        BMI160_ScaleAxes(&accel_raw, accel_g, BMI160_ACCEL_LSB_PER_G);
+        BMI160_ScaleAxes(&gyro_raw, gyro_dps, BMI160_GYRO_LSB_PER_DPS);
+    }
+    return status;
+}
+
+int8_t BMI160_ReadTemperatureC(float *temperature_c)
 {
     uint8_t raw[2];
-    int8_t status;
-
-    if (raw_temp == 0) {
-        return BMI160_E_NULL_PTR;
+    int8_t status = BMI160_ReadRegs(BMI160_REG_TEMP_DATA, raw, sizeof(raw));
+    if (status == BMI160_OK) {
+        int16_t raw_temp = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
+        *temperature_c = 23.0f + ((float)raw_temp / 512.0f);
     }
-
-    status = BMI160_ReadRegs(BMI160_REG_TEMP_DATA, raw, sizeof(raw));
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    *raw_temp = (int16_t)(((uint16_t)raw[1] << 8) | raw[0]);
-    return BMI160_OK;
+    return status;
 }
-
-int8_t BMI160_ReadTemperatureC(float *temperature_c)
-{
-    int16_t raw_temp;
-    int8_t status;
-
-    if (temperature_c == 0) {
-        return BMI160_E_NULL_PTR;
-    }
-
-    status = BMI160_ReadTemperatureRaw(&raw_temp);
-    if (status != BMI160_OK) {
-        return status;
-    }
-
-    *temperature_c = 23.0f + ((float)raw_temp / 512.0f);
-    return BMI160_OK;
-}
-
-#else
-
-int8_t BMI160_Init(uint8_t dev_addr)
-{
-    (void)dev_addr;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_SoftReset(void)
-{
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadChipId(uint8_t *chip_id)
-{
-    (void)chip_id;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadAccel(BMI160_Axes_t *accel)
-{
-    (void)accel;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadGyro(BMI160_Axes_t *gyro)
-{
-    (void)gyro;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadAccelGyro(BMI160_Axes_t *accel, BMI160_Axes_t *gyro)
-{
-    (void)accel;
-    (void)gyro;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadTemperatureRaw(int16_t *raw_temp)
-{
-    (void)raw_temp;
-    return BMI160_E_COMM;
-}
-
-int8_t BMI160_ReadTemperatureC(float *temperature_c)
-{
-    (void)temperature_c;
-    return BMI160_E_COMM;
-}
-
-#endif /* SDK_USING_I2C2 */

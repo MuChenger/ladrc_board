@@ -1,77 +1,73 @@
 /**
  * @file    bmi160_testcase.c
- * @brief   BMI160 test case on I2C2.
+ * @brief   BMI160 sensor and Fusion AHRS test.
  */
 
 #include "ch32v30x.h"
-#include "sdkconfig.h"
 #include "debug.h"
-#include "imu/bmi160/bmi160.h"
+#include "imu/bmi160/bmi160_fusion.h"
 #include "shell.h"
 
-/**
- * @brief   Initialize BMI160 and print sampled sensor data.
- *
- * @param   cnt Number of samples to print.
- * @return  0 on success, -1 on failure.
- */
-int bmi160_func(int cnt)
+#define SAMPLE_MS    10U
+#define PRINT_DIV    10U
+
+static int run_fusion(int cnt)
 {
-#if defined(SDK_USING_I2C2)
-    BMI160_Axes_t accel;
-    BMI160_Axes_t gyro;
-    uint8_t chip_id;
-    float temperature_c;
-    int8_t status;
+    BMI160_Fusion_t fusion;
+    FusionEuler euler;
     int i;
 
-    status = BMI160_InitAuto();
-    if (status != BMI160_OK) {
-        printf("BMI160 init failed, status=%d.\r\n", status);
+    if (BMI160_FusionInit(&fusion) != BMI160_OK) {
+        printf("Fusion init failed\r\n");
         return -1;
     }
 
-    status = BMI160_ReadChipId(&chip_id);
-    if (status != BMI160_OK) {
-        printf("BMI160 read chip id failed, status=%d.\r\n", status);
+    printf("Running...\r\n");
+    for (i = 0; i < cnt; i++) {
+        Delay_Ms(SAMPLE_MS);
+
+        if (BMI160_FusionUpdate(&fusion) != BMI160_OK) {
+            printf("Read error\r\n");
+            return -1;
+        }
+
+        if (i % PRINT_DIV == 0) {
+            euler = BMI160_FusionGetEuler(&fusion);
+            printf("R %7.2f P %7.2f Y %7.2f\r\n",
+                   euler.angle.roll, euler.angle.pitch, euler.angle.yaw);
+        }
+    }
+    return 0;
+}
+
+int bmi160_test(int mode, int cnt)
+{
+    BMI160_Axes_t accel, gyro;
+    float temp;
+    int i;
+
+    if (cnt <= 0) cnt = 100;
+
+    if (BMI160_InitAuto() != BMI160_OK) {
+        printf("Init failed\r\n");
         return -1;
     }
 
-    printf("BMI160 chip id: 0x%02X\r\n", chip_id);
+    if (mode == 1) return run_fusion(cnt);
 
     for (i = 0; i < cnt; i++) {
-        status = BMI160_ReadAccelGyro(&accel, &gyro);
-        if (status != BMI160_OK) {
-            printf("BMI160 read accel/gyro failed, status=%d.\r\n", status);
+        if (BMI160_ReadAccelGyro(&accel, &gyro) != BMI160_OK ||
+            BMI160_ReadTemperatureC(&temp) != BMI160_OK) {
+            printf("Read error\r\n");
             return -1;
         }
-
-        status = BMI160_ReadTemperatureC(&temperature_c);
-        if (status != BMI160_OK) {
-            printf("BMI160 read temperature failed, status=%d.\r\n", status);
-            return -1;
-        }
-
-        printf("ACC[%6d %6d %6d] GYR[%6d %6d %6d] TEMP[%.2fC]\r\n",
-               accel.x,
-               accel.y,
-               accel.z,
-               gyro.x,
-               gyro.y,
-               gyro.z,
-               temperature_c);
+        printf("A[%6d %6d %6d] G[%6d %6d %6d] T:%.1f\r\n",
+               accel.x, accel.y, accel.z, gyro.x, gyro.y, gyro.z, temp);
         Delay_Ms(100);
     }
-
     return 0;
-#else
-    (void)cnt;
-    printf("BMI160 testcase disabled: I2C2 is not enabled.\r\n");
-    return -1;
-#endif /* SDK_USING_I2C2 */
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 bmi160_func,
-                 bmi160_func,
-                 test i2c2 and board bmi160);
+                 bmi160_test, bmi160_test,
+                 bmi160 test: mode(0=sensor,1=fusion) cnt);
