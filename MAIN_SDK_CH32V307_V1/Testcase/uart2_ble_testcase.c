@@ -18,7 +18,11 @@ int uart2_ble_func(int para)
 {
 #if defined(SDK_USING_USART2) && defined(SDK_USING_USART1)
     uint16_t data = 0;
-    uint16_t cnt = 0;
+    int cnt = 0;
+
+    if (para <= 0) {
+        para = 100;
+    }
 
     while (1) {
         while (USART_GetFlagStatus(SDK_USING_USART2_DEVICE, USART_FLAG_RXNE) == SET) {
@@ -27,11 +31,13 @@ int uart2_ble_func(int para)
             USART_SendData(SDK_USING_USART2_DEVICE, data);
             USART_SendData(SDK_USING_USART1_DEVICE, data);
 
-            if (cnt == (uint16_t)para) {
+            if (cnt >= para) {
                 printf("\r\r\n");
                 return 0;
             }
         }
+
+        Delay_Ms(1);
     }
 #else
     (void)para;

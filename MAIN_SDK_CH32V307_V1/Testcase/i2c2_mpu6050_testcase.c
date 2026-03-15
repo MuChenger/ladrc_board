@@ -20,6 +20,10 @@
  */
 int i2c_mpu6050_dmp_func(int cnt)
 {
+    if (cnt <= 0) {
+        cnt = 100;
+    }
+
     if (MPU6050_Init() != 0) {
         printf("MPU6050 init failed.\r\n");
         return -1;
@@ -27,7 +31,10 @@ int i2c_mpu6050_dmp_func(int cnt)
 
     for (int i = 0; i < cnt; i++) {
 #ifdef DMP
-        (void)MPU6050_MPU_DMP_GetData();
+        if (MPU6050_MPU_DMP_GetData() != 0) {
+            printf("DMP read failed.\r\n");
+            return -1;
+        }
         printf("Yaw:%.1f, Pitch:%.1f, Roll:%.1f\r\n",
                MPU6050_para.yaw,
                MPU6050_para.pitch,

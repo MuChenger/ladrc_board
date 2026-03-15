@@ -24,7 +24,7 @@ int gpio_func(int cnt)
     uint16_t led1_pin = SDK_GetPin(SDK_USING_LED_LED1);
     uint16_t led2_pin = SDK_GetPin(SDK_USING_LED_LED2);
 
-    SDK_GPIO_Init();
+    LED_GPIO_INIT();
 
     for (int i = 0; i < cnt; i++) {
         Delay_Ms(500);

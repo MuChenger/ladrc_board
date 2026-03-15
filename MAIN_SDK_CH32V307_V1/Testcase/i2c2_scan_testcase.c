@@ -86,7 +86,7 @@ static int I2C2_ProbeAddress(uint8_t addr_7bit)
  *
  * @return  0 on completion.
  */
-int i2c2_scan_func(void)
+int i2c2_scan_testcase_func(void)
 {
 #if defined(SDK_USING_I2C2)
     uint8_t addr;
@@ -121,6 +121,6 @@ int i2c2_scan_func(void)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 i2c2_scan_func,
-                 i2c2_scan_func,
-                 scan all i2c2 device addresses);
+                 i2c2_scan_testcase_func,
+                 i2c2_scan_testcase_func,
+                 scan all i2c2 device addresses (testcase));

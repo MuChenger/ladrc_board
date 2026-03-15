@@ -11,6 +11,7 @@
 #include "ch32v30x_it.h"
 #include "chry_ringbuffer.h"
 #include "debug.h"
+#include "elog.h"
 #include "imu/bmi160/bmi160.h"
 #include "lshell_port.h"
 #include "MultiTimer.h"
@@ -41,6 +42,30 @@ static int board_startup_init(void)
     return 0;
 }
 INIT_BOARD_EXPORT(board_startup_init);
+
+/**
+ * @brief   Initialize the EasyLogger service.
+ *
+ * @return  0 on success, -1 on failure.
+ */
+static int easylogger_service_init(void)
+{
+    uint8_t level;
+    const size_t default_fmt = ELOG_FMT_LVL | ELOG_FMT_TAG | ELOG_FMT_TIME;
+
+    if (elog_init() != ELOG_NO_ERR) {
+        return -1;
+    }
+
+    for (level = ELOG_LVL_ASSERT; level <= ELOG_LVL_VERBOSE; level++) {
+        elog_set_fmt(level, default_fmt);
+    }
+
+    elog_start();
+
+    return 0;
+}
+INIT_COMPONENT_EXPORT(easylogger_service_init);
 
 /**
  * @brief   Initialize the shell service.

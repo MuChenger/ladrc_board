@@ -18,7 +18,11 @@ int uart6_rs485_func(int para)
 {
 #if defined(SDK_USING_UART6) && defined(SDK_USING_USART1)
     uint16_t data = 0;
-    uint16_t cnt = 0;
+    int cnt = 0;
+
+    if (para <= 0) {
+        para = 100;
+    }
 
     while (1) {
         while (USART_GetFlagStatus(SDK_USING_UART6_DEVICE, USART_FLAG_RXNE) == SET) {
@@ -27,11 +31,13 @@ int uart6_rs485_func(int para)
             USART_SendData(SDK_USING_UART6_DEVICE, data);
             USART_SendData(SDK_USING_USART1_DEVICE, data);
 
-            if (cnt == (uint16_t)para) {
+            if (cnt >= para) {
                 printf("\r\r\n");
                 return 0;
             }
         }
+
+        Delay_Ms(1);
     }
 #else
     (void)para;

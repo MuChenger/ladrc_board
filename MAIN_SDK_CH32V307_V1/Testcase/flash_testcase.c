@@ -20,7 +20,7 @@ static const u8 TEXT_Buf[] = {"LADRC BOARD SPI FLASH W25Qxx"};
  */
 void flash_func(int cnt)
 {
-    u8 datap[FLASH_TEST_SIZE];
+    u8 datap[FLASH_TEST_SIZE + 1] = {0};
     u16 flash_model;
 
     (void)cnt;
@@ -56,6 +56,7 @@ void flash_func(int cnt)
     Delay_Ms(500);
     printf("Start Read W25Qxx....\r\n");
     SPI_Flash_Read(datap, 0x0, FLASH_TEST_SIZE);
+    datap[FLASH_TEST_SIZE] = '\0';
     printf("%s\r\n", datap);
 
     Delay_Ms(500);
@@ -66,6 +67,7 @@ void flash_func(int cnt)
     Delay_Ms(500);
     printf("Start Read W25Qxx....\r\n");
     SPI_Flash_Read(datap, 0x0, FLASH_TEST_SIZE);
+    datap[FLASH_TEST_SIZE] = '\0';
     printf("%s\r\n\r\n", datap);
 }
 

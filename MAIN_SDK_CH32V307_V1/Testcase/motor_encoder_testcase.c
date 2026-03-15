@@ -12,6 +12,15 @@
 #include "shell.h"
 
 void TIMERX_MOTOR_Dir_GPIO_Init(void);
+static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label);
+
+static void motor_encoder_run(TIM_TypeDef *tim, const char *label, int num)
+{
+    for (int i = 0; i < num; i++) {
+        motor_encoder_print_sample(tim, label);
+        Delay_Ms(500);
+    }
+}
 
 /**
  * @brief Run motor and encoder test with selected mode.
@@ -22,67 +31,56 @@ void TIMERX_MOTOR_Dir_GPIO_Init(void);
  */
 int motor_encoder_func(int mode, int num)
 {
+    if (num <= 0) {
+        num = 10;
+    }
+
     TIMERX_MOTOR_Dir_GPIO_Init();
-    TIMER9_PWM_GPIO_Init(100, 4800 - 1, 20);
+    TIMER_PWM_GPIO_Init();
+    TIMER_ENCODER_GPIO_Init();
 
     GPIO_SetBits(GPIOE, GPIO_Pin_8);
     GPIO_SetBits(GPIOE, GPIO_Pin_9);
 
     switch (mode) {
     case 1:
-        TIMER5_ENCODER_GPIO_Init();
         GPIO_SetBits(GPIOE, GPIO_Pin_0);
         GPIO_ResetBits(GPIOE, GPIO_Pin_1);
-        for (int i = 0; i < num; i++) {
-            TIM5_EnCoder_CNT();
-            Delay_Ms(500);
-        }
+        motor_encoder_run(SDK_USING_TIM5_DEVICE, "TIM5", num);
         GPIO_ResetBits(GPIOE, GPIO_Pin_0);
         GPIO_ResetBits(GPIOE, GPIO_Pin_1);
         printf("\r\n\r\n");
         return 0;
 
     case 2:
-        TIMER8_ENCODER_GPIO_Init();
         GPIO_ResetBits(GPIOE, GPIO_Pin_2);
         GPIO_SetBits(GPIOE, GPIO_Pin_3);
-        for (int i = 0; i < num; i++) {
-            TIM8_EnCoder_CNT();
-            Delay_Ms(500);
-        }
+        motor_encoder_run(SDK_USING_TIM8_DEVICE, "TIM8", num);
         GPIO_ResetBits(GPIOE, GPIO_Pin_2);
         GPIO_ResetBits(GPIOE, GPIO_Pin_3);
         printf("\r\n\r\n");
         return 0;
 
     case 3:
-        TIMER3_ENCODER_GPIO_Init();
         GPIO_SetBits(GPIOE, GPIO_Pin_4);
         GPIO_ResetBits(GPIOE, GPIO_Pin_5);
-        for (int i = 0; i < num; i++) {
-            TIM3_EnCoder_CNT();
-            Delay_Ms(500);
-        }
+        motor_encoder_run(SDK_USING_TIM3_DEVICE, "TIM3", num);
         GPIO_ResetBits(GPIOE, GPIO_Pin_4);
         GPIO_ResetBits(GPIOE, GPIO_Pin_5);
         printf("\r\n\r\n");
         return 0;
 
     case 4:
-        TIMER4_ENCODER_GPIO_Init();
         GPIO_ResetBits(GPIOE, GPIO_Pin_6);
         GPIO_SetBits(GPIOE, GPIO_Pin_7);
-        for (int i = 0; i < num; i++) {
-            TIM4_EnCoder_CNT();
-            Delay_Ms(500);
-        }
+        motor_encoder_run(SDK_USING_TIM4_DEVICE, "TIM4", num);
         GPIO_ResetBits(GPIOE, GPIO_Pin_6);
         GPIO_ResetBits(GPIOE, GPIO_Pin_7);
         printf("\r\n\r\n");
         return 0;
 
     case 5:
-        TIMER2_GPIO_Init(10000 - 1, 96 - 1);
+        TIM_GPIO_Init();
 
         GPIO_ResetBits(GPIOE, GPIO_Pin_0); /* M1 */
         GPIO_SetBits(GPIOE, GPIO_Pin_1);
@@ -96,10 +94,13 @@ int motor_encoder_func(int mode, int num)
         GPIO_ResetBits(GPIOE, GPIO_Pin_4); /* M4 */
         GPIO_SetBits(GPIOE, GPIO_Pin_5);
 
-        TIMER8_ENCODER_GPIO_Init();
-        TIMER3_ENCODER_GPIO_Init();
-        TIMER4_ENCODER_GPIO_Init();
-        TIMER5_ENCODER_GPIO_Init();
+        for (int i = 0; i < num; i++) {
+            motor_encoder_print_sample(SDK_USING_TIM5_DEVICE, "TIM5");
+            motor_encoder_print_sample(SDK_USING_TIM8_DEVICE, "TIM8");
+            motor_encoder_print_sample(SDK_USING_TIM3_DEVICE, "TIM3");
+            motor_encoder_print_sample(SDK_USING_TIM4_DEVICE, "TIM4");
+            Delay_Ms(500);
+        }
 
         printf("\r\n\r\n");
         return 0;
@@ -125,8 +126,17 @@ void TIMERX_MOTOR_Dir_GPIO_Init(void)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 |
                                   GPIO_Pin_2 | GPIO_Pin_3 |
                                   GPIO_Pin_4 | GPIO_Pin_5 |
-                                  GPIO_Pin_6 | GPIO_Pin_7;
+                                  GPIO_Pin_6 | GPIO_Pin_7 |
+                                  GPIO_Pin_8 | GPIO_Pin_9;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOE, &GPIO_InitStructure);
+}
+
+static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label)
+{
+    uint16_t count = TIM_GetCounter(tim);
+    const char *dir = (((tim->CTLR1) & TIM_DIR) == TIM_DIR) ? "REV" : "FWD";
+
+    printf("%s count=%u dir=%s\r\n", label, count, dir);
 }

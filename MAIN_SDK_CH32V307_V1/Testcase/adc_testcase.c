@@ -17,11 +17,13 @@
  */
 int adc_func(int cnt)
 {
-    (void)cnt;
+    if (cnt <= 0) {
+        cnt = 100;
+    }
 
     ADC_GPIO_Init();
 
-    while (1) {
+    for (int i = 0; i < cnt; i++) {
         u16 adc_val[6];
 
         adc_val[0] = Get_ADC_Val(ADC_Channel_4);
@@ -38,6 +40,8 @@ int adc_func(int cnt)
                Get_ConversionVal(adc_val[2]), Get_ConversionVal(adc_val[3]),
                Get_ConversionVal(adc_val[4]), Get_ConversionVal(adc_val[5]));
     }
+
+    return 0;
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
