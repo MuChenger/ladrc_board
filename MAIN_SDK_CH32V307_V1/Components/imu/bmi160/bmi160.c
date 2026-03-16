@@ -1,16 +1,18 @@
 /**
  * @file    bmi160.c
- * @brief   BMI160 IMU driver over I2C2.
+ * @brief   BMI160 IMU driver over SDK-configured I2C bus.
  */
 
 #include "bmi160.h"
 #include "debug.h"
 #include "i2c.h"
 
-#define BMI160_I2C_PORT                  I2C2
+#define BMI160_I2C_PORT                  SDK_USING_I2C2_DEVICE
 #define BMI160_I2C_CLOCK_HZ              100000U
 #define BMI160_I2C_OWN_ADDRESS           0x00U
 #define BMI160_I2C_TIMEOUT               0x20000UL
+
+#define BMI160_I2C_RESET_PERIPH          RCC_APB1Periph_I2C2
 
 #define BMI160_REG_CHIP_ID               0x00U
 #define BMI160_REG_GYRO_DATA             0x0CU
@@ -45,8 +47,8 @@ static uint8_t bmi160_dev_addr = BMI160_I2C_ADDR_LOW;
 
 static void BMI160_I2CBusRecover(void)
 {
-    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, ENABLE);
-    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, DISABLE);
+    RCC_APB1PeriphResetCmd(BMI160_I2C_RESET_PERIPH, ENABLE);
+    RCC_APB1PeriphResetCmd(BMI160_I2C_RESET_PERIPH, DISABLE);
     I2C_SoftwareResetCmd(BMI160_I2C_PORT, ENABLE);
     I2C_SoftwareResetCmd(BMI160_I2C_PORT, DISABLE);
     I2C_Cmd(BMI160_I2C_PORT, ENABLE);

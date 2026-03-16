@@ -30,29 +30,29 @@ static void TIMER_PWM_OutputPinInit(const char *pin_name)
 
 void TIMER_PWM_GPIO_Init(void)
 {
-#ifdef SDK_USING_M1_PIN1
+#if defined(SDK_USING_M1_PIN1) || defined(SDK_USING_M1_PIN2)
     TIMER_PWM_OutputPinInit(SDK_USING_M1_PIN1);
-#endif
-#ifdef SDK_USING_M1_PIN2
     TIMER_PWM_OutputPinInit(SDK_USING_M1_PIN2);
 #endif
-#ifdef SDK_USING_M2_PIN1
+
+#if defined(SDK_USING_M2_PIN1) || defined(SDK_USING_M2_PIN2)
     TIMER_PWM_OutputPinInit(SDK_USING_M2_PIN1);
-#endif
-#ifdef SDK_USING_M2_PIN2
     TIMER_PWM_OutputPinInit(SDK_USING_M2_PIN2);
 #endif
-#ifdef SDK_USING_M3_PIN1
+
+#if defined(SDK_USING_M3_PIN1) || defined(SDK_USING_M3_PIN2)
     TIMER_PWM_OutputPinInit(SDK_USING_M3_PIN1);
-#endif
-#ifdef SDK_USING_M3_PIN2
     TIMER_PWM_OutputPinInit(SDK_USING_M3_PIN2);
 #endif
-#ifdef SDK_USING_M4_PIN1
+
+#if defined(SDK_USING_M4_PIN1) || defined(SDK_USING_M4_PIN2)
     TIMER_PWM_OutputPinInit(SDK_USING_M4_PIN1);
-#endif
-#ifdef SDK_USING_M4_PIN2
     TIMER_PWM_OutputPinInit(SDK_USING_M4_PIN2);
+#endif
+
+#if defined(SDK_USING_STOP_PIN1) || defined(SDK_USING_STOP_PIN1)
+    TIMER_PWM_OutputPinInit(SDK_USING_STOP_PIN1);
+    TIMER_PWM_OutputPinInit(SDK_USING_STOP_PIN2);
 #endif
 
 #ifdef SDK_USING_TIM9
@@ -101,4 +101,3 @@ void TIMER_PWM_GPIO_Init(void)
     TIM_Cmd(SDK_USING_TIM9_DEVICE, ENABLE);
 #endif
 }
-

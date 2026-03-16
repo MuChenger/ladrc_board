@@ -7,6 +7,7 @@
 #define USER_PERIPHERAL_DRIVER_TFT_ST7735S_TFT_ST7735S_H_
 
 #include "spi.h"
+#include "gpio_pin.h"
 
 #define X_MAX_PIXEL         128
 #define Y_MAX_PIXEL         128
@@ -24,14 +25,14 @@
 #define LCD_LED_SET
 #define LCD_LED_CLR
 
-#define LCD_CS_CLR  GPIO_ResetBits(GPIOA,GPIO_Pin_15)//CS
-#define LCD_CS_SET  GPIO_SetBits(GPIOA,GPIO_Pin_15)
+#define LCD_CS_CLR  GPIO_ResetBits(SDK_GetPort(SDK_USING_SPI3_CS), SDK_GetPin(SDK_USING_SPI3_CS)) // CS
+#define LCD_CS_SET  GPIO_SetBits(SDK_GetPort(SDK_USING_SPI3_CS), SDK_GetPin(SDK_USING_SPI3_CS))
 
-#define LCD_RS_CLR  GPIO_ResetBits(GPIOD,GPIO_Pin_14)//DC
-#define LCD_RS_SET  GPIO_SetBits(GPIOD,GPIO_Pin_14)
+#define LCD_RS_CLR  GPIO_ResetBits(SDK_GetPort(SDK_USING_LCD_DC), SDK_GetPin(SDK_USING_LCD_DC))   // DC
+#define LCD_RS_SET  GPIO_SetBits(SDK_GetPort(SDK_USING_LCD_DC), SDK_GetPin(SDK_USING_LCD_DC))
 
-#define LCD_RST_CLR GPIO_ResetBits(GPIOD,GPIO_Pin_12)//RES
-#define LCD_RST_SET GPIO_SetBits(GPIOD,GPIO_Pin_12)
+#define LCD_RST_CLR GPIO_ResetBits(SDK_GetPort(SDK_USING_LCD_RST), SDK_GetPin(SDK_USING_LCD_RST)) // RES
+#define LCD_RST_SET GPIO_SetBits(SDK_GetPort(SDK_USING_LCD_RST), SDK_GetPin(SDK_USING_LCD_RST))
 
 
 void LCD_GPIO_Init(void);

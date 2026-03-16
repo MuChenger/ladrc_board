@@ -1,6 +1,6 @@
 /**
  * @file    bmi160.h
- * @brief   BMI160 IMU driver over I2C2.
+ * @brief   BMI160 IMU driver over SDK-configured I2C bus.
  */
 
 #ifndef COMPONENTS_IMU_BMI160_BMI160_H_

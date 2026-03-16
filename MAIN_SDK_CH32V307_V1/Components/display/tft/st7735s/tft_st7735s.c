@@ -5,20 +5,27 @@
 
 #include "tft_st7735s.h"
 
+static void LCD_OutputPinInit(const char *pin_name)
+{
+    GPIO_InitTypeDef GPIO_InitStructure = {0};
+
+    RCC_APB2PeriphClockCmd(SDK_GetGPIORCC(pin_name), ENABLE);
+    GPIO_InitStructure.GPIO_Pin = SDK_GetPin(pin_name);
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(SDK_GetPort(pin_name), &GPIO_InitStructure);
+    GPIO_SetBits(SDK_GetPort(pin_name), SDK_GetPin(pin_name));
+}
+
 /**
  * @brief Initialize the TFT control GPIOs and SPI pins.
  */
 void LCD_GPIO_Init(void) {
-    GPIO_InitTypeDef GPIO_InitStructure;
-
     SPI_GPIO_Init(SDK_USING_SPI3_DEVICE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOE, ENABLE);
-
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOE, &GPIO_InitStructure);
-    GPIO_SetBits(GPIOE, GPIO_Pin_10);
+    LCD_OutputPinInit(SDK_USING_SPI3_CS);
+    LCD_OutputPinInit(SDK_USING_LCD_DC);
+    LCD_OutputPinInit(SDK_USING_LCD_RST);
+    LCD_OutputPinInit(SDK_USING_LCD_BLK);
 }
 
 /**
@@ -313,4 +320,3 @@ void LCD_ON(void) {
 void LCD_OFF(void) {
     GPIO_ResetBits(GPIOE, GPIO_Pin_10);
 }
-
