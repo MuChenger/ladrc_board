@@ -10,6 +10,8 @@
 #include "gpio_pin.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_GPIO)
+
 /**
  * @brief Toggle LED GPIOs for a given cycle count.
  *
@@ -18,7 +20,6 @@
  */
 int gpio_func(int cnt)
 {
-#if defined(SDK_USING_LED) && defined(SDK_USING_LED_LED1) && defined(SDK_USING_LED_LED2)
     GPIO_TypeDef *led1_port = SDK_GetPort(SDK_USING_LED_LED1);
     GPIO_TypeDef *led2_port = SDK_GetPort(SDK_USING_LED_LED2);
     uint16_t led1_pin = SDK_GetPin(SDK_USING_LED_LED1);
@@ -37,14 +38,11 @@ int gpio_func(int cnt)
     }
 
     return 0;
-#else
-    (void)cnt;
-    printf("LED testcase disabled by sdkconfig.\r\n");
-    return -1;
-#endif
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  gpio_func,
                  gpio_func,
                  test board gpio);
+
+#endif /* SDK_USING_TESTCASE_GPIO */

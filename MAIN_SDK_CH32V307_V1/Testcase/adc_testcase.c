@@ -9,6 +9,8 @@
 #include "debug.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_ADC)
+
 /**
  * @brief Read ADC channels and print converted values.
  *
@@ -48,3 +50,5 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  adc_func,
                  adc_func,
                  test board adc);
+
+#endif /* SDK_USING_TESTCASE_ADC */

@@ -8,6 +8,8 @@
 #include "debug.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_BLE)
+
 /**
  * @brief Loopback UART2 data and mirror to USART1.
  *
@@ -16,7 +18,6 @@
  */
 int uart2_ble_func(int para)
 {
-#if defined(SDK_USING_USART2) && defined(SDK_USING_USART1)
     uint16_t data = 0;
     int cnt = 0;
 
@@ -39,14 +40,11 @@ int uart2_ble_func(int para)
 
         Delay_Ms(1);
     }
-#else
-    (void)para;
-    printf("UART2/USART1 testcase disabled by sdkconfig.\r\n");
-    return -1;
-#endif
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  uart2_ble_func,
                  uart2_ble_func,
                  test uart2 and ble);
+
+#endif /* SDK_USING_TESTCASE_BLE */

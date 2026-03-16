@@ -388,8 +388,51 @@ components:
     name: W25Q16
     description: FLASH
     enabled: true
+    interface:
+      device: ''
+      instance: ''
 testcases:
 - case:
-    name: UART
+    name: ADC
+    description: null
+    enabled: true
+- case:
+    name: IMU_BMI160
+    description: null
+    enabled: true
+- case:
+    name: IMU_MPU6050
+    description: null
+    enabled: true
+- case:
+    name: EASY_LOGGER
+    description: null
+    enabled: true
+- case:
+    name: GPIO
+    description: null
+    enabled: true
+- case:
+    name: I2C_SCAN
+    description: null
+    enabled: true
+- case:
+    name: W25Q16
+    description: null
+    enabled: true
+- case:
+    name: LCD_ST7735S
+    description: null
+    enabled: true
+- case:
+    name: MOTOR
+    description: null
+    enabled: true
+- case:
+    name: BLE
+    description: null
+    enabled: true
+- case:
+    name: RS485
     description: null
     enabled: true

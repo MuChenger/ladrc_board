@@ -8,6 +8,8 @@
 #include "imu/bmi160/bmi160_fusion.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_IMU_BMI160)
+
 #define SAMPLE_MS    10U
 #define PRINT_DIV    10U
 
@@ -71,3 +73,5 @@ int bmi160_test(int mode, int cnt)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  bmi160_test, bmi160_test,
                  bmi160 test: mode(0=sensor,1=fusion) cnt);
+
+#endif /* SDK_USING_TESTCASE_IMU_BMI160 */

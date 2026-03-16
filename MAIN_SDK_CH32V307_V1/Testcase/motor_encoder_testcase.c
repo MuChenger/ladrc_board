@@ -11,6 +11,8 @@
 #include "timer_pwm.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_MOTOR) 
+
 void TIMERX_MOTOR_Dir_GPIO_Init(void);
 static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label);
 
@@ -140,3 +142,5 @@ static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label)
 
     printf("%s count=%u dir=%s\r\n", label, count, dir);
 }
+
+#endif /* SDK_USING_TESTCASE_MOTOR */

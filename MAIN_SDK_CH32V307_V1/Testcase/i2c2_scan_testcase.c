@@ -9,7 +9,7 @@
 #include "i2c.h"
 #include "shell.h"
 
-#if defined(SDK_USING_I2C2)
+#if defined(SDK_USING_TESTCASE_I2C_SCAN)
 
 #define I2C2_SCAN_TIMEOUT        0x8000UL
 
@@ -79,8 +79,6 @@ static int I2C2_ProbeAddress(uint8_t addr_7bit)
     }
 }
 
-#endif /* SDK_USING_I2C2 */
-
 /**
  * @brief   Scan all valid 7-bit device addresses on I2C2.
  *
@@ -88,7 +86,6 @@ static int I2C2_ProbeAddress(uint8_t addr_7bit)
  */
 int i2c2_scan_testcase_func(void)
 {
-#if defined(SDK_USING_I2C2)
     uint8_t addr;
     int found = 0;
     int probe_status;
@@ -114,13 +111,11 @@ int i2c2_scan_testcase_func(void)
     }
 
     return 0;
-#else
-    printf("I2C2 scan disabled: I2C2 is not enabled.\r\n");
-    return -1;
-#endif /* SDK_USING_I2C2 */
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  i2c2_scan_testcase_func,
                  i2c2_scan_testcase_func,
                  scan all i2c2 device addresses (testcase));
+
+#endif /* SDK_USING_TESTCASE_I2C_SCAN */

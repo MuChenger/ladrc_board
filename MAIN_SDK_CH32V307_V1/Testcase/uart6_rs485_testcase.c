@@ -8,6 +8,8 @@
 #include "debug.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_RS485)
+
 /**
  * @brief Loopback UART6 data and mirror to USART1.
  *
@@ -16,7 +18,6 @@
  */
 int uart6_rs485_func(int para)
 {
-#if defined(SDK_USING_UART6) && defined(SDK_USING_USART1)
     uint16_t data = 0;
     int cnt = 0;
 
@@ -39,14 +40,11 @@ int uart6_rs485_func(int para)
 
         Delay_Ms(1);
     }
-#else
-    (void)para;
-    printf("UART6/USART1 testcase disabled by sdkconfig.\r\n");
-    return -1;
-#endif
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  uart6_rs485_func,
                  uart6_rs485_func,
                  test uart6 and rs485);
+
+#endif /* SDK_USING_TESTCASE_RS485 */

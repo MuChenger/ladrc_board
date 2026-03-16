@@ -9,6 +9,8 @@
 #include "w25q16.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_W25Q16)
+
 #define FLASH_TEST_SIZE (sizeof(TEXT_Buf))
 
 static const u8 TEXT_Buf[] = {"LADRC BOARD SPI FLASH W25Qxx"};
@@ -75,3 +77,5 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  flash_func,
                  flash_func,
                  test board flash);
+
+#endif /* SDK_USING_TESTCASE_W25Q16 */

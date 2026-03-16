@@ -9,6 +9,8 @@
 #include "elog.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_EASY_LOGGER)
+
 static const char *k_easylogger_tag = "elog_tc";
 
 int easylogger_test(int mode)
@@ -69,3 +71,5 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  easylogger_test,
                  easylogger_test,
                  easylogger test: mode(0=level,1=filter,2=hexdump,3=raw));
+
+#endif /* SDK_USING_TESTCASE_EASY_LOGGER */

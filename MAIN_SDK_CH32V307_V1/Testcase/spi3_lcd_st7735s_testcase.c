@@ -9,6 +9,8 @@
 #include "tft_st7735s.h"
 #include "shell.h"
 
+#if defined(SDK_USING_LCD) && defined(SDK_USING_TESTCASE_LCD_ST7735S)
+
 void Gui_Circle(u16 X, u16 Y, u16 R, u16 fc);
 void Gui_DrawFont_GBK16(u16 x, u16 y, u16 fc, u16 bc, u8 *s);
 
@@ -264,3 +266,5 @@ const unsigned char asc16[]={
 #endif
 0x00,
 };
+
+#endif /* SDK_USING_TESTCASE_LCD_ST7735S */

@@ -9,6 +9,8 @@
 #include "mpu6050_dmp.h"
 #include "shell.h"
 
+#if defined(SDK_USING_TESTCASE_IMU_MPU6050)
+
 /**
  * @brief Run MPU6050 test loop.
  *
@@ -52,3 +54,5 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  i2c_mpu6050_dmp_func,
                  i2c_mpu6050_dmp_func,
                  test i2c2 and board mpu6050 by dmp);
+
+#endif /* SDK_USING_TESTCASE_IMU_MPU6050 */
