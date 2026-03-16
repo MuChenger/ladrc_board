@@ -243,6 +243,7 @@ void elog_start(void) {
 #endif
 
     /* show version */
+    printf("\r\n");
     log_i("EasyLogger V%s is initialize success.", ELOG_SW_VERSION);
 }
 

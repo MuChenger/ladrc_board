@@ -19,6 +19,9 @@
 #include "tft_st7735s.h"
 #include "timer.h"
 
+#define LOG_TAG      "Init"
+static int easylogger_service_init(void);
+static int shell_service_init(void);
 /**
  * @brief   Shared ring buffer instance defined in main.c.
  */
@@ -39,6 +42,10 @@ static int board_startup_init(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
     Delay_Init();
     USART_Printf_Init(115200);
+    shell_service_init();
+    easylogger_service_init();
+    log_i("USART Printf Init Success.");
+    log_i("Shell Init Success.");
     return 0;
 }
 INIT_BOARD_EXPORT(board_startup_init);
@@ -65,7 +72,6 @@ static int easylogger_service_init(void)
 
     return 0;
 }
-INIT_COMPONENT_EXPORT(easylogger_service_init);
 
 /**
  * @brief   Initialize the shell service.
@@ -77,7 +83,6 @@ static int shell_service_init(void)
     Shell_INIT();
     return 0;
 }
-INIT_DEVICE_EXPORT(shell_service_init);
 
 /**
  * @brief   Initialize the BMI160 IMU on I2C2.
@@ -94,15 +99,15 @@ static int bmi160_service_init(void)
 
     status = BMI160_InitAuto();
     if (status == BMI160_OK) {
-        printf("BMI160 init success.\r\n");
+        log_i("BMI160 init success.");
     } else {
-        printf("BMI160 init skipped, status=%d.\r\n", status);
+        log_w("BMI160 init skipped, status=%d.", status);
     }
 #endif /* SDK_USING_I2C2 */
 
     return 0;
 }
-INIT_COMPONENT_EXPORT(bmi160_service_init);
+INIT_DEVICE_EXPORT(bmi160_service_init);
 
 /**
  * @brief   Initialize the communication ring buffer.
@@ -112,11 +117,10 @@ INIT_COMPONENT_EXPORT(bmi160_service_init);
 static int ringbuffer_service_init(void)
 {
     if (0 == chry_ringbuffer_init(&chry_rbuffer_tid, rbuffer_pool, sizeof(rbuffer_pool))) {
-        printf("success\r\n");
+        log_i("Ringbuffer init success.");
         return 0;
     }
-
-    printf("error\r\n");
+    log_w("Ringbuffer init error.");
     return -1;
 }
 INIT_COMPONENT_EXPORT(ringbuffer_service_init);
@@ -130,6 +134,7 @@ INIT_COMPONENT_EXPORT(ringbuffer_service_init);
 static int multitimer_service_init(void)
 {
     multiTimerInstall(getPlatformTicks);
+    log_i("Multitimer init success.");
     return 0;
 }
 INIT_COMPONENT_EXPORT(multitimer_service_init);
@@ -144,6 +149,7 @@ INIT_COMPONENT_EXPORT(multitimer_service_init);
 static int tft_service_init(void)
 {
     LCD_INIT();
+    log_i("LCD init success.");
     return 0;
 }
 INIT_COMPONENT_EXPORT(tft_service_init);
@@ -158,6 +164,7 @@ INIT_COMPONENT_EXPORT(tft_service_init);
 static int tft_off_service_init(void)
 {
     LCD_OFF();
+    log_i("LCD off success.");
     return 0;
 }
 INIT_APP_EXPORT(tft_off_service_init);
@@ -172,6 +179,7 @@ INIT_APP_EXPORT(tft_off_service_init);
 static int timer_gpio_init(void)
 {
     TIM_GPIO_Init();
+    log_i("TIM init success.");
     return 0;
 }
 INIT_DEVICE_EXPORT(timer_gpio_init);
@@ -187,6 +195,7 @@ static int simulation_service_init(void)
 {
     SIMULATION_INIT();
     SIMULATION_DINIT();
+    log_i("Simulation init success.");
     return 0;
 }
 INIT_APP_EXPORT(simulation_service_init);
