@@ -6,17 +6,32 @@
 #include "w25q16.h"
 #include "gpio_pin.h"
 
-#define FLASH_CS_LOW()  GPIO_WriteBit(SDK_GetPort(SDK_USING_SPI2_CS), SDK_GetPin(SDK_USING_SPI2_CS), 0)
-#define FLASH_CS_HIGH() GPIO_WriteBit(SDK_GetPort(SDK_USING_SPI2_CS), SDK_GetPin(SDK_USING_SPI2_CS), 1)
+static const char *SPI_Flash_GetCsPin(void)
+{
+#if defined(SDK_USING_SPI2) && defined(SDK_USING_SPI3)
+    if (SDK_USING_W25Q16_INTERFACE_INSTANCE == SDK_USING_SPI2_DEVICE) return SDK_USING_SPI2_CS;
+    if (SDK_USING_W25Q16_INTERFACE_INSTANCE == SDK_USING_SPI3_DEVICE) return SDK_USING_SPI3_CS;
+    return SDK_USING_SPI2_CS;
+#elif defined(SDK_USING_SPI2)
+    return SDK_USING_SPI2_CS;
+#elif defined(SDK_USING_SPI3)
+    return SDK_USING_SPI3_CS;
+#else
+    return "PA0";
+#endif
+}
+
+#define FLASH_CS_LOW()  GPIO_WriteBit(SDK_GetPort(SPI_Flash_GetCsPin()), SDK_GetPin(SPI_Flash_GetCsPin()), 0)
+#define FLASH_CS_HIGH() GPIO_WriteBit(SDK_GetPort(SPI_Flash_GetCsPin()), SDK_GetPin(SPI_Flash_GetCsPin()), 1)
 
 /* Temporary sector buffer used by erase-before-write logic. */
-u8 SPI_FLASH_BUF[4096];
+static u8 SPI_FLASH_BUF[4096];
 
 /**
  * @brief Initialize the SPI flash interface.
  */
 void SPI_Flash_Init(void) {
-    SPI_GPIO_Init(SDK_USING_SPI2_DEVICE);
+    SPI_GPIO_Init(SDK_USING_W25Q16_INTERFACE_INSTANCE);
 }
 
 /**
@@ -27,8 +42,8 @@ u8 SPI_Flash_ReadSR(void) {
     u8 byte = 0;
 
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_ReadStatusReg);
-    byte = SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0Xff);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_ReadStatusReg);
+    byte = SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0Xff);
     FLASH_CS_HIGH();
 
     return byte;
@@ -40,8 +55,8 @@ u8 SPI_Flash_ReadSR(void) {
  */
 void SPI_FLASH_Write_SR(u8 sr) {
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_WriteStatusReg);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, sr);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_WriteStatusReg);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, sr);
     FLASH_CS_HIGH();
 }
 
@@ -58,7 +73,7 @@ void SPI_Flash_Wait_Busy(void) {
  */
 void SPI_FLASH_Write_Enable(void) {
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_WriteEnable);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_WriteEnable);
     FLASH_CS_HIGH();
 }
 
@@ -67,7 +82,7 @@ void SPI_FLASH_Write_Enable(void) {
  */
 void SPI_FLASH_Write_Disable(void) {
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_WriteDisable);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_WriteDisable);
     FLASH_CS_HIGH();
 }
 
@@ -79,12 +94,12 @@ u16 SPI_Flash_ReadID(void) {
     u16 Temp = 0;
 
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_ManufactDeviceID);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0x00);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0x00);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0x00);
-    Temp |= SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0xFF) << 8;
-    Temp |= SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0xFF);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_ManufactDeviceID);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0x00);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0x00);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0x00);
+    Temp |= SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0xFF) << 8;
+    Temp |= SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0xFF);
     FLASH_CS_HIGH();
 
     return Temp;
@@ -98,10 +113,10 @@ u32 SPI_Flash_Read_JEDEC_ID(void) {
     u32 Temp = 0;
 
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_JedecDeviceID);
-    Temp |= SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0xFF) << 16;
-    Temp |= SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0xFF) << 8;
-    Temp |= SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0xFF);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_JedecDeviceID);
+    Temp |= SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0xFF) << 16;
+    Temp |= SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0xFF) << 8;
+    Temp |= SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0xFF);
     FLASH_CS_HIGH();
 
     return Temp;
@@ -116,10 +131,10 @@ void SPI_Flash_Erase_Sector(u32 Dst_Addr) {
     SPI_FLASH_Write_Enable();
     SPI_Flash_Wait_Busy();
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_SectorErase);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((Dst_Addr) >> 16));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((Dst_Addr) >> 8));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)Dst_Addr);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_SectorErase);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((Dst_Addr) >> 16));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((Dst_Addr) >> 8));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)Dst_Addr);
     FLASH_CS_HIGH();
     SPI_Flash_Wait_Busy();
 }
@@ -134,13 +149,13 @@ void SPI_Flash_Read(u8 *pBuffer, u32 ReadAddr, u16 size) {
     u16 i;
 
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_ReadData);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((ReadAddr) >> 16));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((ReadAddr) >> 8));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)ReadAddr);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_ReadData);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((ReadAddr) >> 16));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((ReadAddr) >> 8));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)ReadAddr);
 
     for (i = 0; i < size; i++) {
-        pBuffer[i] = SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0XFF);
+        pBuffer[i] = SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, 0XFF);
     }
 
     FLASH_CS_HIGH();
@@ -157,13 +172,13 @@ void SPI_Flash_Write_Page(u8 *pBuffer, u32 WriteAddr, u16 size) {
 
     SPI_FLASH_Write_Enable();
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_PageProgram);
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((WriteAddr) >> 16));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)((WriteAddr) >> 8));
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, (u8)WriteAddr);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_PageProgram);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((WriteAddr) >> 16));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)((WriteAddr) >> 8));
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, (u8)WriteAddr);
 
     for (i = 0; i < size; i++) {
-        SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, pBuffer[i]);
+        SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, pBuffer[i]);
     }
 
     FLASH_CS_HIGH();
@@ -235,12 +250,6 @@ void SPI_Flash_Write(u8 *pBuffer, u32 WriteAddr, u16 size) {
 
             SPI_Flash_Read(SPI_FLASH_BUF, secpos * 4096, 4096);
 
-            for (i = 0; i < 4096; i++) {
-                printf("start \r\n ");
-                printf("%d ", SPI_FLASH_BUF[i]);
-                printf("end \r\n ");
-            }
-
             for (i = 0; i < secremain; i++) {
                 SPI_FLASH_BUF[i + secoff] = pBuffer[i];
             }
@@ -276,7 +285,7 @@ void SPI_Flash_Erase_Chip(void) {
     SPI_FLASH_Write_Enable();
     SPI_Flash_Wait_Busy();
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_ChipErase);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_ChipErase);
     FLASH_CS_HIGH();
     SPI_Flash_Wait_Busy();
 }
@@ -286,7 +295,7 @@ void SPI_Flash_Erase_Chip(void) {
  */
 void SPI_Flash_PowerDown(void) {
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_PowerDown);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_PowerDown);
     FLASH_CS_HIGH();
     Delay_Us(3);
 }
@@ -296,7 +305,7 @@ void SPI_Flash_PowerDown(void) {
  */
 void SPI_Flash_WAKEUP(void) {
     FLASH_CS_LOW();
-    SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, W25X_ReleasePowerDown);
+    SPI_ReadWriteByte(SDK_USING_W25Q16_INTERFACE_INSTANCE, W25X_ReleasePowerDown);
     FLASH_CS_HIGH();
     Delay_Us(3);
 }

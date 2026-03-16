@@ -8,6 +8,7 @@
 
 #include "spi.h"
 #include "string.h"
+#include "sdkconfig.h"
 
 /* Winbond SPI flash device IDs. */
 #define W25Q80                   0XEF13
@@ -33,6 +34,11 @@
 #define W25X_DeviceID            0xAB
 #define W25X_ManufactDeviceID    0x90
 #define W25X_JedecDeviceID       0x9F
+
+#ifndef SDK_USING_W25Q16_INTERFACE_INSTANCE
+#define SDK_USING_W25Q16_INTERFACE_INSTANCE SDK_USING_SPI2_DEVICE
+#endif
+
 /**
  * @brief Initialize the SPI flash hardware interface.
  */

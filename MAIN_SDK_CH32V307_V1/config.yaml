@@ -384,6 +384,10 @@ components:
     interface:
       device: I2C
       instance: I2C2
+- pkg:
+    name: W25Q16
+    description: FLASH
+    enabled: true
 testcases:
 - case:
     name: UART

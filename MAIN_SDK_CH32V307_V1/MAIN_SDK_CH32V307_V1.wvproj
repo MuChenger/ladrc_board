@@ -64,7 +64,6 @@
 					"${project}/Testcase/i2c2_mpu6050_testcase.c",
 					"${project}/Testcase/gpio_testcase.c",
 					"${project}/Testcase/flash_testcase.c",
-					"${project}/Testcase/bmi160_testcase.c",
 					"${project}/Testcase/adc_testcase.c",
 					"${project}/Components/imu/mpu6050"
 				],
