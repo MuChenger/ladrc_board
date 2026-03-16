@@ -5,6 +5,21 @@
 
 #include "tft_st7735s.h"
 
+const char *LCD_InterfaceGetCsPin(void)
+{
+#if defined(SDK_USING_SPI2) && defined(SDK_USING_SPI3)
+    if (SDK_USING_LCD_INTERFACE_INSTANCE == SDK_USING_SPI2_DEVICE) return SDK_USING_SPI2_CS;
+    if (SDK_USING_LCD_INTERFACE_INSTANCE == SDK_USING_SPI3_DEVICE) return SDK_USING_SPI3_CS;
+    return SDK_USING_SPI3_CS;
+#elif defined(SDK_USING_SPI2)
+    return SDK_USING_SPI2_CS;
+#elif defined(SDK_USING_SPI3)
+    return SDK_USING_SPI3_CS;
+#else
+    return "PA0";
+#endif
+}
+
 static void LCD_OutputPinInit(const char *pin_name)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
@@ -21,8 +36,8 @@ static void LCD_OutputPinInit(const char *pin_name)
  * @brief Initialize the TFT control GPIOs and SPI pins.
  */
 void LCD_GPIO_Init(void) {
-    SPI_GPIO_Init(SDK_USING_SPI3_DEVICE);
-    LCD_OutputPinInit(SDK_USING_SPI3_CS);
+    SPI_GPIO_Init(SDK_USING_LCD_INTERFACE_INSTANCE);
+    LCD_OutputPinInit(LCD_InterfaceGetCsPin());
     LCD_OutputPinInit(SDK_USING_LCD_DC);
     LCD_OutputPinInit(SDK_USING_LCD_RST);
     LCD_OutputPinInit(SDK_USING_LCD_BLK);
@@ -35,7 +50,7 @@ void LCD_GPIO_Init(void) {
 void Lcd_WriteIndex(u8 Index) {
     LCD_CS_CLR;
     LCD_RS_CLR;
-    SPI_ReadWriteByte(SDK_USING_SPI3_DEVICE, Index);
+    SPI_ReadWriteByte(SDK_USING_LCD_INTERFACE_INSTANCE, Index);
     LCD_CS_SET;
 }
 
@@ -46,7 +61,7 @@ void Lcd_WriteIndex(u8 Index) {
 void Lcd_WriteData(u8 Data) {
     LCD_CS_CLR;
     LCD_RS_SET;
-    SPI_ReadWriteByte(SDK_USING_SPI3_DEVICE, Data);
+    SPI_ReadWriteByte(SDK_USING_LCD_INTERFACE_INSTANCE, Data);
     LCD_CS_SET;
 }
 
@@ -57,8 +72,8 @@ void Lcd_WriteData(u8 Data) {
 void LCD_WriteData_16Bit(u16 Data) {
     LCD_CS_CLR;
     LCD_RS_SET;
-    SPI_ReadWriteByte(SDK_USING_SPI3_DEVICE, Data >> 8);
-    SPI_ReadWriteByte(SDK_USING_SPI3_DEVICE, Data);
+    SPI_ReadWriteByte(SDK_USING_LCD_INTERFACE_INSTANCE, Data >> 8);
+    SPI_ReadWriteByte(SDK_USING_LCD_INTERFACE_INSTANCE, Data);
     LCD_CS_SET;
 }
 

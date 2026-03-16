@@ -374,9 +374,18 @@ components:
     name: LCD
     description: LCD
     enabled: true
+    interface:
+      device: SPI
+      instance: SPI3
+- pkg:
+    name: BMI160
+    description: IMU
+    enabled: true
+    interface:
+      device: I2C
+      instance: I2C2
 testcases:
 - case:
     name: UART
     description: null
     enabled: true
-

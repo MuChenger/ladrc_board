@@ -8,6 +8,7 @@
 
 #include "spi.h"
 #include "gpio_pin.h"
+#include "sdkconfig.h"
 
 #define X_MAX_PIXEL         128
 #define Y_MAX_PIXEL         128
@@ -25,8 +26,14 @@
 #define LCD_LED_SET
 #define LCD_LED_CLR
 
-#define LCD_CS_CLR  GPIO_ResetBits(SDK_GetPort(SDK_USING_SPI3_CS), SDK_GetPin(SDK_USING_SPI3_CS)) // CS
-#define LCD_CS_SET  GPIO_SetBits(SDK_GetPort(SDK_USING_SPI3_CS), SDK_GetPin(SDK_USING_SPI3_CS))
+#ifndef SDK_USING_LCD_INTERFACE_INSTANCE
+#define SDK_USING_LCD_INTERFACE_INSTANCE SDK_USING_SPI3_DEVICE
+#endif
+
+const char *LCD_InterfaceGetCsPin(void);
+
+#define LCD_CS_CLR  GPIO_ResetBits(SDK_GetPort(LCD_InterfaceGetCsPin()), SDK_GetPin(LCD_InterfaceGetCsPin())) // CS
+#define LCD_CS_SET  GPIO_SetBits(SDK_GetPort(LCD_InterfaceGetCsPin()), SDK_GetPin(LCD_InterfaceGetCsPin()))
 
 #define LCD_RS_CLR  GPIO_ResetBits(SDK_GetPort(SDK_USING_LCD_DC), SDK_GetPin(SDK_USING_LCD_DC))   // DC
 #define LCD_RS_SET  GPIO_SetBits(SDK_GetPort(SDK_USING_LCD_DC), SDK_GetPin(SDK_USING_LCD_DC))

@@ -1,12 +1,13 @@
 /**
  * @file    bmi160.h
- * @brief   BMI160 IMU driver over SDK-configured I2C bus.
+ * @brief   BMI160 IMU driver over SDK-configured I2C interface instance.
  */
 
 #ifndef COMPONENTS_IMU_BMI160_BMI160_H_
 #define COMPONENTS_IMU_BMI160_BMI160_H_
 
 #include "ch32v30x.h"
+#include "sdkconfig.h"
 
 #ifdef __cplusplus
 extern "C" {

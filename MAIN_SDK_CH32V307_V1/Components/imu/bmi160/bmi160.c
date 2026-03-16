@@ -1,18 +1,20 @@
 /**
  * @file    bmi160.c
- * @brief   BMI160 IMU driver over SDK-configured I2C bus.
+ * @brief   BMI160 IMU driver over SDK-configured I2C interface instance.
  */
 
 #include "bmi160.h"
 #include "debug.h"
 #include "i2c.h"
 
-#define BMI160_I2C_PORT                  SDK_USING_I2C2_DEVICE
+#ifndef SDK_USING_BMI160_INTERFACE_INSTANCE
+#define SDK_USING_BMI160_INTERFACE_INSTANCE SDK_USING_I2C2_DEVICE
+#endif
+
+#define BMI160_I2C_PORT                  SDK_USING_BMI160_INTERFACE_INSTANCE
 #define BMI160_I2C_CLOCK_HZ              100000U
 #define BMI160_I2C_OWN_ADDRESS           0x00U
 #define BMI160_I2C_TIMEOUT               0x20000UL
-
-#define BMI160_I2C_RESET_PERIPH          RCC_APB1Periph_I2C2
 
 #define BMI160_REG_CHIP_ID               0x00U
 #define BMI160_REG_GYRO_DATA             0x0CU
@@ -45,10 +47,28 @@
 
 static uint8_t bmi160_dev_addr = BMI160_I2C_ADDR_LOW;
 
+static uint32_t BMI160_GetI2CResetPeriph(void)
+{
+#if defined(SDK_USING_I2C1) && defined(SDK_USING_I2C2)
+    if (SDK_USING_BMI160_INTERFACE_INSTANCE == SDK_USING_I2C1_DEVICE) return RCC_APB1Periph_I2C1;
+    if (SDK_USING_BMI160_INTERFACE_INSTANCE == SDK_USING_I2C2_DEVICE) return RCC_APB1Periph_I2C2;
+    return RCC_APB1Periph_I2C2;
+#elif defined(SDK_USING_I2C1)
+    return RCC_APB1Periph_I2C1;
+#elif defined(SDK_USING_I2C2)
+    return RCC_APB1Periph_I2C2;
+#else
+    return 0;
+#endif
+}
+
 static void BMI160_I2CBusRecover(void)
 {
-    RCC_APB1PeriphResetCmd(BMI160_I2C_RESET_PERIPH, ENABLE);
-    RCC_APB1PeriphResetCmd(BMI160_I2C_RESET_PERIPH, DISABLE);
+    uint32_t i2c_reset_periph = BMI160_GetI2CResetPeriph();
+    if (i2c_reset_periph != 0) {
+        RCC_APB1PeriphResetCmd(i2c_reset_periph, ENABLE);
+        RCC_APB1PeriphResetCmd(i2c_reset_periph, DISABLE);
+    }
     I2C_SoftwareResetCmd(BMI160_I2C_PORT, ENABLE);
     I2C_SoftwareResetCmd(BMI160_I2C_PORT, DISABLE);
     I2C_Cmd(BMI160_I2C_PORT, ENABLE);
@@ -255,7 +275,7 @@ int8_t BMI160_Init(uint8_t dev_addr)
     int8_t status;
 
     bmi160_dev_addr = dev_addr;
-    I2C_GPIO_Init(BMI160_I2C_CLOCK_HZ, BMI160_I2C_OWN_ADDRESS);
+    I2C_GPIO_InitEx(BMI160_I2C_PORT, BMI160_I2C_CLOCK_HZ, BMI160_I2C_OWN_ADDRESS);
 
     status = BMI160_ReadChipId(&chip_id);
     if (status != BMI160_OK) return status;
