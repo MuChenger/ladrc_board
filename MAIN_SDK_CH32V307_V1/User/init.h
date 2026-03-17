@@ -19,7 +19,12 @@
 #include "tft_st7735s.h"
 #include "timer.h"
 
-#define LOG_TAG      "Init"
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "Init"
+
 static int easylogger_service_init(void);
 static int shell_service_init(void);
 /**

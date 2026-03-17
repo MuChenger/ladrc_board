@@ -14,8 +14,13 @@
 
 #include "shell_cfg.h"
 
+/**
+ * @brief 用户头文件
+ */
+#include "sdkconfig.h"
 #define     SHELL_VERSION               "3.2.3"                 /**< 版本号 */
 
+#define     SDK_VERSION                 "2.0.0"  
 
 /**
  * @brief shell 断言
