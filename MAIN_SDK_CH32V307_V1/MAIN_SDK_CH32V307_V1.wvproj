@@ -56,14 +56,7 @@
 					"${project}/User/BMI160测试程序",
 					"${project}/Components/algorithm/Fusion/Simple",
 					"${project}/User/Fusion-main",
-					"${project}/Testcase/uart2_ble_testcase.c",
-					"${project}/Testcase/uart6_rs485_testcase.c",
-					"${project}/Testcase/spi3_lcd_st7735s_testcase.c",
-					"${project}/Testcase/motor_encoder_testcase.c",
-					"${project}/Testcase/i2c2_scan_testcase.c",
 					"${project}/Testcase/i2c2_mpu6050_testcase.c",
-					"${project}/Testcase/gpio_testcase.c",
-					"${project}/Testcase/flash_testcase.c",
 					"${project}/Components/imu/mpu6050"
 				],
 				"optimization": {

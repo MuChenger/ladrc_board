@@ -1,6 +1,6 @@
 /**
  * @file    i2c2_scan_testcase.c
- * @brief   I2C2 bus scan test case.
+ * @brief   I2C bus scan test case.
  */
 
 #include "ch32v30x.h"
@@ -11,25 +11,27 @@
 
 #if defined(SDK_USING_TESTCASE_I2C_SCAN)
 
-#define I2C2_SCAN_TIMEOUT        0x8000UL
+#define I2C_SCAN_TIMEOUT        0x8000UL
 
-static void I2C2_ScanBusRecover(void)
+static void I2C_ScanBusRecover(I2C_TypeDef *i2c, uint32_t apb1_periph)
 {
-    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, ENABLE);
-    RCC_APB1PeriphResetCmd(RCC_APB1Periph_I2C2, DISABLE);
-    I2C_SoftwareResetCmd(I2C2, ENABLE);
-    I2C_SoftwareResetCmd(I2C2, DISABLE);
-    I2C_Cmd(I2C2, ENABLE);
-    I2C_AcknowledgeConfig(I2C2, ENABLE);
+    if (apb1_periph != 0) {
+        RCC_APB1PeriphResetCmd(apb1_periph, ENABLE);
+        RCC_APB1PeriphResetCmd(apb1_periph, DISABLE);
+    }
+    I2C_SoftwareResetCmd(i2c, ENABLE);
+    I2C_SoftwareResetCmd(i2c, DISABLE);
+    I2C_Cmd(i2c, ENABLE);
+    I2C_AcknowledgeConfig(i2c, ENABLE);
 }
 
-static int I2C2_WaitBusyIdle(void)
+static int I2C_WaitBusyIdle(I2C_TypeDef *i2c, uint32_t apb1_periph)
 {
-    uint32_t timeout = I2C2_SCAN_TIMEOUT;
+    uint32_t timeout = I2C_SCAN_TIMEOUT;
 
-    while (I2C_GetFlagStatus(I2C2, I2C_FLAG_BUSY) != RESET) {
+    while (I2C_GetFlagStatus(i2c, I2C_FLAG_BUSY) != RESET) {
         if (timeout-- == 0U) {
-            I2C2_ScanBusRecover();
+            I2C_ScanBusRecover(i2c, apb1_periph);
             return -1;
         }
     }
@@ -37,85 +39,113 @@ static int I2C2_WaitBusyIdle(void)
     return 0;
 }
 
-static int I2C2_ProbeAddress(uint8_t addr_7bit)
+static int I2C_ProbeAddress(I2C_TypeDef *i2c, uint32_t apb1_periph, uint8_t addr_7bit)
 {
-    uint32_t timeout = I2C2_SCAN_TIMEOUT;
+    uint32_t timeout = I2C_SCAN_TIMEOUT;
 
-    if (I2C2_WaitBusyIdle() != 0) {
+    if (I2C_WaitBusyIdle(i2c, apb1_periph) != 0) {
         return -1;
     }
 
-    I2C_GenerateSTART(I2C2, ENABLE);
-    timeout = I2C2_SCAN_TIMEOUT;
-    while (!I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_MODE_SELECT)) {
+    I2C_GenerateSTART(i2c, ENABLE);
+    timeout = I2C_SCAN_TIMEOUT;
+    while (!I2C_CheckEvent(i2c, I2C_EVENT_MASTER_MODE_SELECT)) {
         if (timeout-- == 0U) {
-            I2C_GenerateSTOP(I2C2, ENABLE);
+            I2C_GenerateSTOP(i2c, ENABLE);
+            I2C_ScanBusRecover(i2c, apb1_periph);
             return -1;
         }
     }
 
-    I2C_Send7bitAddress(I2C2, (uint8_t)(addr_7bit << 1), I2C_Direction_Transmitter);
+    I2C_Send7bitAddress(i2c, (uint8_t)(addr_7bit << 1), I2C_Direction_Transmitter);
 
-    timeout = I2C2_SCAN_TIMEOUT;
+    timeout = I2C_SCAN_TIMEOUT;
     while (1) {
-        if (I2C_CheckEvent(I2C2, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) {
-            (void)I2C2->STAR1;
-            (void)I2C2->STAR2;
-            I2C_GenerateSTOP(I2C2, ENABLE);
+        if (I2C_CheckEvent(i2c, I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED)) {
+            (void)i2c->STAR1;
+            (void)i2c->STAR2;
+            I2C_GenerateSTOP(i2c, ENABLE);
             return 0;
         }
 
-        if (I2C_GetFlagStatus(I2C2, I2C_FLAG_AF) != RESET) {
-            I2C_ClearFlag(I2C2, I2C_FLAG_AF);
-            I2C_GenerateSTOP(I2C2, ENABLE);
+        if (I2C_GetFlagStatus(i2c, I2C_FLAG_AF) != RESET) {
+            I2C_ClearFlag(i2c, I2C_FLAG_AF);
+            I2C_GenerateSTOP(i2c, ENABLE);
             return 1;
         }
 
         if (timeout-- == 0U) {
-            I2C_GenerateSTOP(I2C2, ENABLE);
-            I2C2_ScanBusRecover();
+            I2C_GenerateSTOP(i2c, ENABLE);
+            I2C_ScanBusRecover(i2c, apb1_periph);
             return -1;
         }
     }
 }
 
 /**
- * @brief   Scan all valid 7-bit device addresses on I2C2.
- *
- * @return  0 on completion.
+ * @brief Scan all valid 7-bit device addresses on one I2C bus.
+ * @param i2c I2C instance.
+ * @return Number of found devices.
  */
-int i2c2_scan_testcase_func(void)
+static int I2C_ScanOneBus(I2C_TypeDef *i2c, uint32_t apb1_periph, const char *name)
 {
     uint8_t addr;
     int found = 0;
     int probe_status;
 
-    I2C_GPIO_Init(100000U, 0x00U);
+    I2C_GPIO_InitEx(i2c, 100000U, 0x00U);
 
-    printf("I2C2 scanning...\r\n");
+    printf("%s scanning...\r\n", name);
 
     for (addr = 0x08U; addr <= 0x77U; addr++) {
-        probe_status = I2C2_ProbeAddress(addr);
+        probe_status = I2C_ProbeAddress(i2c, apb1_periph, addr);
         if (probe_status == 0) {
-            printf("Found device at 0x%02X\r\n", addr);
+            printf("%s found device at 0x%02X\r\n", name, addr);
             found++;
         } else if (probe_status < 0) {
-            printf("Probe error at 0x%02X\r\n", addr);
+            printf("%s probe error at 0x%02X\r\n", name, addr);
         }
     }
 
     if (found == 0) {
-        printf("No I2C device acknowledged on I2C2.\r\n");
+        printf("No I2C device acknowledged on %s.\r\n", name);
     } else {
-        printf("I2C2 scan done, %d device(s) found.\r\n", found);
+        printf("%s scan done, %d device(s) found.\r\n", name, found);
     }
 
+    return found;
+}
+
+/**
+ * @brief Scan all enabled I2C peripherals from sdkconfig.
+ * @return 0 on completion.
+ */
+int i2c2_scan_testcase_func(void)
+{
+    int total_found = 0;
+    int bus_count = 0;
+
+#ifdef SDK_USING_I2C1
+    total_found += I2C_ScanOneBus(SDK_USING_I2C1_DEVICE, RCC_APB1Periph_I2C1, "I2C1");
+    bus_count++;
+#endif
+#ifdef SDK_USING_I2C2
+    total_found += I2C_ScanOneBus(SDK_USING_I2C2_DEVICE, RCC_APB1Periph_I2C2, "I2C2");
+    bus_count++;
+#endif
+
+    if (bus_count == 0) {
+        printf("No I2C peripheral enabled in sdkconfig.\r\n");
+        return 0;
+    }
+
+    printf("I2C scan complete on %d bus(es), total %d device(s) found.\r\n", bus_count, total_found);
     return 0;
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  i2c2_scan_testcase_func,
                  i2c2_scan_testcase_func,
-                 scan all i2c2 device addresses (testcase));
+                 scan all enabled i2c device addresses (testcase));
 
 #endif /* SDK_USING_TESTCASE_I2C_SCAN */

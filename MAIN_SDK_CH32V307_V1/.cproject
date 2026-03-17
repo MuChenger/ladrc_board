@@ -292,7 +292,7 @@
             </toolChain>
           </folderInfo>
           <sourceEntries>
-            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/display/oled|Components/utilities/multitimer|Components/Encoder_Speed|User/BMI160测试程序|Components/algorithm/Fusion/Simple|User/Fusion-main|Testcase/uart2_ble_testcase.c|Testcase/uart6_rs485_testcase.c|Testcase/spi3_lcd_st7735s_testcase.c|Testcase/motor_encoder_testcase.c|Testcase/i2c2_scan_testcase.c|Testcase/i2c2_mpu6050_testcase.c|Testcase/gpio_testcase.c|Testcase/flash_testcase.c|Components/imu/mpu6050" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/display/oled|Components/utilities/multitimer|Components/Encoder_Speed|User/BMI160测试程序|Components/algorithm/Fusion/Simple|User/Fusion-main|Testcase/i2c2_mpu6050_testcase.c|Components/imu/mpu6050" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
           </sourceEntries>
         </configuration>
       </storageModule>

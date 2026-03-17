@@ -9,12 +9,19 @@
 #include "timer.h"
 #include "timer_encoder.h"
 #include "timer_pwm.h"
+#include "gpio_pin.h"
 #include "shell.h"
 
 #if defined(SDK_USING_TESTCASE_MOTOR) 
 
 void TIMERX_MOTOR_Dir_GPIO_Init(void);
 static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label);
+static void motor_pin_set(const char *pin_name);
+static void motor_pin_reset(const char *pin_name);
+static void motor_set_m1(uint8_t pin1_high, uint8_t pin2_high);
+static void motor_set_m2(uint8_t pin1_high, uint8_t pin2_high);
+static void motor_set_m3(uint8_t pin1_high, uint8_t pin2_high);
+static void motor_set_m4(uint8_t pin1_high, uint8_t pin2_high);
 
 static void motor_encoder_run(TIM_TypeDef *tim, const char *label, int num)
 {
@@ -41,60 +48,45 @@ int motor_encoder_func(int mode, int num)
     TIMER_PWM_GPIO_Init();
     TIMER_ENCODER_GPIO_Init();
 
-    GPIO_SetBits(GPIOE, GPIO_Pin_8);
-    GPIO_SetBits(GPIOE, GPIO_Pin_9);
+    motor_pin_set(SDK_USING_STOP_PIN1);
+    motor_pin_set(SDK_USING_STOP_PIN2);
 
     switch (mode) {
     case 1:
-        GPIO_SetBits(GPIOE, GPIO_Pin_0);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_1);
+        motor_set_m1(1, 0);
         motor_encoder_run(SDK_USING_TIM5_DEVICE, "TIM5", num);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_0);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_1);
+        motor_set_m1(0, 0);
         printf("\r\n\r\n");
         return 0;
 
     case 2:
-        GPIO_ResetBits(GPIOE, GPIO_Pin_2);
-        GPIO_SetBits(GPIOE, GPIO_Pin_3);
+        motor_set_m2(0, 1);
         motor_encoder_run(SDK_USING_TIM8_DEVICE, "TIM8", num);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_2);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_3);
+        motor_set_m2(0, 0);
         printf("\r\n\r\n");
         return 0;
 
     case 3:
-        GPIO_SetBits(GPIOE, GPIO_Pin_4);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_5);
+        motor_set_m3(1, 0);
         motor_encoder_run(SDK_USING_TIM3_DEVICE, "TIM3", num);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_4);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_5);
+        motor_set_m3(0, 0);
         printf("\r\n\r\n");
         return 0;
 
     case 4:
-        GPIO_ResetBits(GPIOE, GPIO_Pin_6);
-        GPIO_SetBits(GPIOE, GPIO_Pin_7);
+        motor_set_m4(0, 1);
         motor_encoder_run(SDK_USING_TIM4_DEVICE, "TIM4", num);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_6);
-        GPIO_ResetBits(GPIOE, GPIO_Pin_7);
+        motor_set_m4(0, 0);
         printf("\r\n\r\n");
         return 0;
 
     case 5:
         TIM_GPIO_Init();
 
-        GPIO_ResetBits(GPIOE, GPIO_Pin_0); /* M1 */
-        GPIO_SetBits(GPIOE, GPIO_Pin_1);
-
-        GPIO_SetBits(GPIOE, GPIO_Pin_2); /* M2 */
-        GPIO_ResetBits(GPIOE, GPIO_Pin_3);
-
-        GPIO_ResetBits(GPIOE, GPIO_Pin_6); /* M3 */
-        GPIO_SetBits(GPIOE, GPIO_Pin_7);
-
-        GPIO_ResetBits(GPIOE, GPIO_Pin_4); /* M4 */
-        GPIO_SetBits(GPIOE, GPIO_Pin_5);
+        motor_set_m1(0, 1);
+        motor_set_m2(1, 0);
+        motor_set_m3(0, 1);
+        motor_set_m4(0, 1);
 
         for (int i = 0; i < num; i++) {
             motor_encoder_print_sample(SDK_USING_TIM5_DEVICE, "TIM5");
@@ -122,17 +114,23 @@ SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
  */
 void TIMERX_MOTOR_Dir_GPIO_Init(void)
 {
+    const char *pins[] = {
+        SDK_USING_M1_PIN1, SDK_USING_M1_PIN2,
+        SDK_USING_M2_PIN1, SDK_USING_M2_PIN2,
+        SDK_USING_M3_PIN1, SDK_USING_M3_PIN2,
+        SDK_USING_M4_PIN1, SDK_USING_M4_PIN2,
+        SDK_USING_STOP_PIN1, SDK_USING_STOP_PIN2
+    };
     GPIO_InitTypeDef GPIO_InitStructure = {0};
+    uint8_t i;
 
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOE, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 |
-                                  GPIO_Pin_2 | GPIO_Pin_3 |
-                                  GPIO_Pin_4 | GPIO_Pin_5 |
-                                  GPIO_Pin_6 | GPIO_Pin_7 |
-                                  GPIO_Pin_8 | GPIO_Pin_9;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(GPIOE, &GPIO_InitStructure);
+    for (i = 0; i < (uint8_t)(sizeof(pins) / sizeof(pins[0])); i++) {
+        RCC_APB2PeriphClockCmd(SDK_GetGPIORCC(pins[i]), ENABLE);
+        GPIO_InitStructure.GPIO_Pin = SDK_GetPin(pins[i]);
+        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+        GPIO_Init(SDK_GetPort(pins[i]), &GPIO_InitStructure);
+    }
 }
 
 static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label)
@@ -141,6 +139,40 @@ static void motor_encoder_print_sample(TIM_TypeDef *tim, const char *label)
     const char *dir = (((tim->CTLR1) & TIM_DIR) == TIM_DIR) ? "REV" : "FWD";
 
     printf("%s count=%u dir=%s\r\n", label, count, dir);
+}
+
+static void motor_pin_set(const char *pin_name)
+{
+    GPIO_SetBits(SDK_GetPort(pin_name), SDK_GetPin(pin_name));
+}
+
+static void motor_pin_reset(const char *pin_name)
+{
+    GPIO_ResetBits(SDK_GetPort(pin_name), SDK_GetPin(pin_name));
+}
+
+static void motor_set_m1(uint8_t pin1_high, uint8_t pin2_high)
+{
+    if (pin1_high) motor_pin_set(SDK_USING_M1_PIN1); else motor_pin_reset(SDK_USING_M1_PIN1);
+    if (pin2_high) motor_pin_set(SDK_USING_M1_PIN2); else motor_pin_reset(SDK_USING_M1_PIN2);
+}
+
+static void motor_set_m2(uint8_t pin1_high, uint8_t pin2_high)
+{
+    if (pin1_high) motor_pin_set(SDK_USING_M2_PIN1); else motor_pin_reset(SDK_USING_M2_PIN1);
+    if (pin2_high) motor_pin_set(SDK_USING_M2_PIN2); else motor_pin_reset(SDK_USING_M2_PIN2);
+}
+
+static void motor_set_m3(uint8_t pin1_high, uint8_t pin2_high)
+{
+    if (pin1_high) motor_pin_set(SDK_USING_M3_PIN1); else motor_pin_reset(SDK_USING_M3_PIN1);
+    if (pin2_high) motor_pin_set(SDK_USING_M3_PIN2); else motor_pin_reset(SDK_USING_M3_PIN2);
+}
+
+static void motor_set_m4(uint8_t pin1_high, uint8_t pin2_high)
+{
+    if (pin1_high) motor_pin_set(SDK_USING_M4_PIN1); else motor_pin_reset(SDK_USING_M4_PIN1);
+    if (pin2_high) motor_pin_set(SDK_USING_M4_PIN2); else motor_pin_reset(SDK_USING_M4_PIN2);
 }
 
 #endif /* SDK_USING_TESTCASE_MOTOR */
