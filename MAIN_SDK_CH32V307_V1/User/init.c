@@ -34,7 +34,7 @@ static int board_startup_init(void)
 {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
     Delay_Init();
-    USART_Printf_Init(115200);
+    USART_Printf_Init(SDK_USING_USART1_BAUDRATE);
     shell_service_init();
     easylogger_service_init();
     log_i("USART Printf Init Success.");
@@ -77,6 +77,7 @@ static int shell_service_init(void)
     return 0;
 }
 
+#ifdef SDK_USING_BMI160
 /**
  * @brief   Initialize the BMI160 IMU on I2C2.
  *
@@ -101,6 +102,7 @@ static int bmi160_service_init(void)
     return 0;
 }
 INIT_DEVICE_EXPORT(bmi160_service_init);
+#endif /* SDK_USING_BMI160 */
 
 /**
  * @brief   Initialize the communication ring buffer.

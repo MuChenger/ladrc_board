@@ -5,11 +5,6 @@
 
 #include "init.h"
 
-/**
- * @brief   Run automatic initialization and the foreground task loop.
- *
- * @return  This function does not return.
- */
 int main(void)
 {
     auto_init_run();
@@ -21,4 +16,3 @@ int main(void)
 #endif /* SDK_USING_MULTI_TIMER */
     }
 }
-

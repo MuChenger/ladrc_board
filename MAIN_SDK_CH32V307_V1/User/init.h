@@ -11,3 +11,4 @@
 #include "tft_st7735s.h"
 #include "timer.h"
 #include "sgl.h"
+#include "sdkconfig.h"
