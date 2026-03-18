@@ -4,8 +4,8 @@
 		{
 			"type": "mrs-debugger",
 			"request": "launch",
-			"name": "LADRC_BOARD_RISCV",
-			"cwd": "e:\\ladrc_board\\LADRC_BOARD_RISCV",
+			"name": "MAIN_SDK_CH32V307_V1",
+			"cwd": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1",
 			"openOCDCfg": {
 				"useLocalOpenOCD": true,
 				"executable": "d:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
@@ -22,7 +22,7 @@
 				"enableNoZeroWaitingAreaFlash": false
 			},
 			"gdbCfg": {
-				"executable": "d:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12/bin/riscv-wch-elf-gdb.exe",
+				"executable": "d:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC/bin/riscv-none-embed-gdb.exe",
 				"commands": [
 					"set mem inaccessible-by-default off",
 					"set architecture riscv:rv32",
@@ -39,8 +39,8 @@
 					"additionalCommands": []
 				},
 				"loadedFiles": {
-					"executableFile": "e:\\ladrc_board\\LADRC_BOARD_RISCV\\obj\\LADRC_BOARD_RISCV.elf",
-					"symbolFile": "e:\\ladrc_board\\LADRC_BOARD_RISCV\\obj\\LADRC_BOARD_RISCV.elf",
+					"executableFile": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
+					"symbolFile": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
 					"executableFileOffset": 0,
 					"symbolFileOffset": 0
 				},

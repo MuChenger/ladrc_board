@@ -398,6 +398,13 @@ components:
     interface:
       device: ''
       instance: ''
+- pkg:
+    name: MULTI_TIMER
+    description: MULTITIMER
+    enabled: true
+    interface:
+      device: ''
+      instance: ''
 testcases:
 - case:
     name: ADC
@@ -413,6 +420,10 @@ testcases:
     enabled: true
 - case:
     name: EASY_LOGGER
+    description: null
+    enabled: true
+- case:
+    name: MULTITIMER
     description: null
     enabled: true
 - case:

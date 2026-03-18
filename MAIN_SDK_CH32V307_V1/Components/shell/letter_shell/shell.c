@@ -86,6 +86,7 @@ static const char *shellText[] =
 {
 #if SHELL_SHOW_INFO == 1
     [SHELL_TEXT_INFO] =
+        "\r\n"
         " _         _   _                  _          _ _ \r\n"
         "| |    ___| |_| |_ ___ _ __   ___| |__   ___| | |\r\n"
         "| |   / _ \\ __| __/ _ \\ '__| / __| '_ \\ / _ \\ | |\r\n"
