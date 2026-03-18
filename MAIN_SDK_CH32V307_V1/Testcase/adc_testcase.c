@@ -8,7 +8,13 @@
 #include "adc.h"
 #include "debug.h"
 #include "shell.h"
+#include "elog.h"
 
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/adc/"
 #if defined(SDK_USING_TESTCASE_ADC)
 
 /**
@@ -17,7 +23,7 @@
  * @param cnt Unused.
  * @return Never returns during normal operation.
  */
-int adc_func(int cnt)
+int case_adc(int cnt)
 {
     if (cnt <= 0) {
         cnt = 100;
@@ -37,7 +43,7 @@ int adc_func(int cnt)
 
         Delay_Ms(100);
 
-        printf("1:%04d 2:%04d 3:%04d 4:%04d 5:%04d 6:%04d \r\n",
+        log_i("CH1:%04d CH2:%04d CH3:%04d CH4:%04d CH5:%04d CH6:%04d",
                Get_ConversionVal(adc_val[0]), Get_ConversionVal(adc_val[1]),
                Get_ConversionVal(adc_val[2]), Get_ConversionVal(adc_val[3]),
                Get_ConversionVal(adc_val[4]), Get_ConversionVal(adc_val[5]));
@@ -47,8 +53,8 @@ int adc_func(int cnt)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 adc_func,
-                 adc_func,
+                 case_adc,
+                 case_adc,
                  test board adc);
 
 #endif /* SDK_USING_TESTCASE_ADC */

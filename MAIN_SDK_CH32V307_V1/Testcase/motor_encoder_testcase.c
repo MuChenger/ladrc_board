@@ -11,6 +11,13 @@
 #include "timer_pwm.h"
 #include "gpio_pin.h"
 #include "shell.h"
+#include "elog.h"
+
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/motor/"
 
 #if defined(SDK_USING_TESTCASE_MOTOR) 
 
@@ -38,7 +45,7 @@ static void motor_encoder_run(TIM_TypeDef *tim, const char *label, int num)
  * @param num Loop count for encoder sampling.
  * @return 0 on completion.
  */
-int motor_encoder_func(int mode, int num)
+int case_motor(int mode, int num)
 {
     if (num <= 0) {
         num = 10;
@@ -56,28 +63,28 @@ int motor_encoder_func(int mode, int num)
         motor_set_m1(1, 0);
         motor_encoder_run(SDK_USING_TIM5_DEVICE, "TIM5", num);
         motor_set_m1(0, 0);
-        printf("\r\n\r\n");
+        log_d("\r\n");
         return 0;
 
     case 2:
         motor_set_m2(0, 1);
         motor_encoder_run(SDK_USING_TIM8_DEVICE, "TIM8", num);
         motor_set_m2(0, 0);
-        printf("\r\n\r\n");
+        log_d("\r\n");
         return 0;
 
     case 3:
         motor_set_m3(1, 0);
         motor_encoder_run(SDK_USING_TIM3_DEVICE, "TIM3", num);
         motor_set_m3(0, 0);
-        printf("\r\n\r\n");
+        log_d("\r\n");
         return 0;
 
     case 4:
         motor_set_m4(0, 1);
         motor_encoder_run(SDK_USING_TIM4_DEVICE, "TIM4", num);
         motor_set_m4(0, 0);
-        printf("\r\n\r\n");
+        log_d("\r\n");
         return 0;
 
     case 5:
@@ -96,18 +103,13 @@ int motor_encoder_func(int mode, int num)
             Delay_Ms(500);
         }
 
-        printf("\r\n\r\n");
+        log_d("\r\n");
         return 0;
 
     default:
         return 0;
     }
 }
-
-SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 motor_encoder_func,
-                 motor_encoder_func,
-                 test board timer and motor func);
 
 /**
  * @brief Initialize motor direction control GPIOs.
@@ -174,5 +176,10 @@ static void motor_set_m4(uint8_t pin1_high, uint8_t pin2_high)
     if (pin1_high) motor_pin_set(SDK_USING_M4_PIN1); else motor_pin_reset(SDK_USING_M4_PIN1);
     if (pin2_high) motor_pin_set(SDK_USING_M4_PIN2); else motor_pin_reset(SDK_USING_M4_PIN2);
 }
+
+SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
+                 case_motor,
+                 case_motor,
+                 test board timer and motor func);
 
 #endif /* SDK_USING_TESTCASE_MOTOR */

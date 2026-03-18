@@ -13,7 +13,7 @@
 
 static const char *k_easylogger_tag = "elog_tc";
 
-int easylogger_test(int mode)
+int case_easylogger(int mode)
 {
     static const uint8_t sample_data[] = {
         0x45, 0x61, 0x73, 0x79, 0x4C, 0x6F, 0x67, 0x67,
@@ -68,8 +68,8 @@ int easylogger_test(int mode)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 easylogger_test,
-                 easylogger_test,
+                 case_easylogger,
+                 case_easylogger,
                  easylogger test: mode(0=level,1=filter,2=hexdump,3=raw));
 
 #endif /* SDK_USING_TESTCASE_EASY_LOGGER */

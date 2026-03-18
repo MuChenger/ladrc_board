@@ -34,7 +34,7 @@ extern "C" {
 #endif
 
 #ifndef     LOG_ENABLE
-    #define LOG_ENABLE         1                /**< 使能log */
+    #define LOG_ENABLE         0                /**< 使能log */
 #endif
 
 #if LOG_USING_LOCK == 1

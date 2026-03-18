@@ -8,6 +8,13 @@
 #include "debug.h"
 #include "i2c.h"
 #include "shell.h"
+#include "elog.h"
+
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/i2cscan/"
 
 #if defined(SDK_USING_TESTCASE_I2C_SCAN)
 
@@ -95,22 +102,22 @@ static int I2C_ScanOneBus(I2C_TypeDef *i2c, uint32_t apb1_periph, const char *na
 
     I2C_GPIO_InitEx(i2c, 100000U, 0x00U);
 
-    printf("%s scanning...\r\n", name);
+    log_d("%s scanning...", name);
 
     for (addr = 0x08U; addr <= 0x77U; addr++) {
         probe_status = I2C_ProbeAddress(i2c, apb1_periph, addr);
         if (probe_status == 0) {
-            printf("%s found device at 0x%02X\r\n", name, addr);
+            log_d("%s found device at 0x%02X", name, addr);
             found++;
         } else if (probe_status < 0) {
-            printf("%s probe error at 0x%02X\r\n", name, addr);
+            log_d("%s probe error at 0x%02X", name, addr);
         }
     }
 
     if (found == 0) {
-        printf("No I2C device acknowledged on %s.\r\n", name);
+        log_d("No I2C device acknowledged on %s.", name);
     } else {
-        printf("%s scan done, %d device(s) found.\r\n", name, found);
+        log_d("%s scan done, %d device(s) found.", name, found);
     }
 
     return found;
@@ -120,7 +127,7 @@ static int I2C_ScanOneBus(I2C_TypeDef *i2c, uint32_t apb1_periph, const char *na
  * @brief Scan all enabled I2C peripherals from sdkconfig.
  * @return 0 on completion.
  */
-int i2c2_scan_testcase_func(void)
+int case_i2cscan(void)
 {
     int total_found = 0;
     int bus_count = 0;
@@ -135,17 +142,17 @@ int i2c2_scan_testcase_func(void)
 #endif
 
     if (bus_count == 0) {
-        printf("No I2C peripheral enabled in sdkconfig.\r\n");
+        log_d("No I2C peripheral enabled in sdkconfig.");
         return 0;
     }
 
-    printf("I2C scan complete on %d bus(es), total %d device(s) found.\r\n", bus_count, total_found);
+    log_d("I2C scan complete on %d bus(es), total %d device(s) found.", bus_count, total_found);
     return 0;
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 i2c2_scan_testcase_func,
-                 i2c2_scan_testcase_func,
+                 case_i2cscan,
+                 case_i2cscan,
                  scan all enabled i2c device addresses (testcase));
 
 #endif /* SDK_USING_TESTCASE_I2C_SCAN */

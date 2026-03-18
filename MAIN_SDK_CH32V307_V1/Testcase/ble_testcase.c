@@ -7,6 +7,13 @@
 #include "sdkconfig.h"
 #include "debug.h"
 #include "shell.h"
+#include "elog.h"
+
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/ble/"
 
 #if defined(SDK_USING_TESTCASE_BLE)
 
@@ -16,7 +23,7 @@
  * @param para Number of bytes to process before returning.
  * @return 0 on completion.
  */
-int uart2_ble_func(int para)
+int case_ble(int para)
 {
     uint16_t data = 0;
     int cnt = 0;
@@ -33,7 +40,7 @@ int uart2_ble_func(int para)
             USART_SendData(SDK_USING_USART1_DEVICE, data);
 
             if (cnt >= para) {
-                printf("\r\r\n");
+                log_d("\r\r\n");
                 return 0;
             }
         }
@@ -43,8 +50,8 @@ int uart2_ble_func(int para)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 uart2_ble_func,
-                 uart2_ble_func,
+                 case_ble,
+                 case_ble,
                  test uart2 and ble);
 
 #endif /* SDK_USING_TESTCASE_BLE */

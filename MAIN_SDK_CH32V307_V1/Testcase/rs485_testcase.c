@@ -7,7 +7,13 @@
 #include "sdkconfig.h"
 #include "debug.h"
 #include "shell.h"
+#include "elog.h"
 
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/rs485/"
 #if defined(SDK_USING_TESTCASE_RS485)
 
 /**
@@ -16,7 +22,7 @@
  * @param para Number of bytes to process before returning.
  * @return 0 on completion.
  */
-int uart6_rs485_func(int para)
+int case_rs485(int para)
 {
     uint16_t data = 0;
     int cnt = 0;
@@ -33,7 +39,7 @@ int uart6_rs485_func(int para)
             USART_SendData(SDK_USING_USART1_DEVICE, data);
 
             if (cnt >= para) {
-                printf("\r\r\n");
+                log_d("\r");
                 return 0;
             }
         }
@@ -43,8 +49,8 @@ int uart6_rs485_func(int para)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 uart6_rs485_func,
-                 uart6_rs485_func,
+                 case_rs485,
+                 case_rs485,
                  test uart6 and rs485);
 
 #endif /* SDK_USING_TESTCASE_RS485 */

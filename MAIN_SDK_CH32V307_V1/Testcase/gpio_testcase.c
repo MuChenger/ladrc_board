@@ -9,7 +9,13 @@
 #include "gpio.h"
 #include "gpio_pin.h"
 #include "shell.h"
+#include "elog.h"
 
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/gpio/"
 #if defined(SDK_USING_TESTCASE_GPIO)
 
 /**
@@ -18,7 +24,7 @@
  * @param cnt Toggle count.
  * @return 0 on completion.
  */
-int gpio_func(int cnt)
+int case_gpio(int cnt)
 {
     GPIO_TypeDef *led1_port = SDK_GetPort(SDK_USING_LED_LED1);
     GPIO_TypeDef *led2_port = SDK_GetPort(SDK_USING_LED_LED2);
@@ -41,8 +47,8 @@ int gpio_func(int cnt)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 gpio_func,
-                 gpio_func,
+                 case_gpio,
+                 case_gpio,
                  test board gpio);
 
 #endif /* SDK_USING_TESTCASE_GPIO */

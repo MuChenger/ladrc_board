@@ -8,8 +8,15 @@
 #include "debug.h"
 #include "tft_st7735s.h"
 #include "shell.h"
+#include "elog.h"
 
-#if defined(SDK_USING_LCD) && defined(SDK_USING_TESTCASE_LCD_ST7735S)
+#ifdef LOG_TAG
+#undef LOG_TAG
+#endif /* LOG_TAG */
+
+#define LOG_TAG "testcase/lcd/"
+
+#if defined(SDK_USING_TESTCASE_LCD_ST7735S)
 
 void Gui_Circle(u16 X, u16 Y, u16 R, u16 fc);
 void Gui_DrawFont_GBK16(u16 x, u16 y, u16 fc, u16 bc, u8 *s);
@@ -22,7 +29,7 @@ extern const unsigned char asc16[];
  * @param mode Test mode selector.
  * @return 0 on completion.
  */
-int spi3_lcd_func(int mode)
+int case_lcd(int mode)
 {
     LCD_INIT();
 
@@ -81,8 +88,8 @@ int spi3_lcd_func(int mode)
 }
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
-                 spi3_lcd_func,
-                 spi3_lcd_func,
+                 case_lcd,
+                 case_lcd,
                  test board lcd and spi3);
 
 /**
