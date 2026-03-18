@@ -6,7 +6,7 @@
 #ifndef VOFA_H
 #define VOFA_H
 
-#define CMD_BUFFER_SIZE 32
+#define CMD_BUFFER_SIZE 12
 #define MAX_TYPE_LEN 8
 
 /**
