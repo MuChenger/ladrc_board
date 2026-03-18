@@ -1,5 +1,6 @@
 #include "ch32v30x_it.h"
 
+#include "sgl.h"
 #include "chry_ringbuffer.h"
 
 extern chry_ringbuffer_t chry_rbuffer_tid;
@@ -46,6 +47,7 @@ void TIM2_IRQHandler(void)
 
 void TIM6_IRQHandler(void)
 {
+    sgl_tick_inc(1);
     timer6_tick++;
     if (TIM_GetITStatus(TIM6, TIM_IT_Update) != RESET)
     {

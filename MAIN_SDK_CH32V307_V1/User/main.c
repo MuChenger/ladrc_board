@@ -16,13 +16,14 @@ int main(void)
 
     while (1)
     {
+        sgl_task_handle();
 #ifdef LDARC_COMPONENT_SIMULATION
         Simulation_parse_command();
 #endif /* LDARC_COMPONENT_SIMULATION */
 
-#ifdef LDARC_COMPONENT_MULTITIMER
+#ifdef SDK_USING_SIMULATION
         multiTimerYield();
-#endif /* LDARC_COMPONENT_MULTITIMER */
+#endif /* SDK_USING_SIMULATION */
     }
 }
 

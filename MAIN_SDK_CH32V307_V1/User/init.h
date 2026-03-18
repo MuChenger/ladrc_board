@@ -18,6 +18,7 @@
 #include "simulation.h"
 #include "tft_st7735s.h"
 #include "timer.h"
+#include "sgl.h"
 
 #ifdef LOG_TAG
 #undef LOG_TAG
@@ -145,7 +146,7 @@ static int multitimer_service_init(void)
 INIT_COMPONENT_EXPORT(multitimer_service_init);
 #endif /* LDARC_COMPONENT_MULTITIMER */
 
-#ifdef LDARC_COMPONENT_TFT
+#ifdef SDK_USING_LCD
 /**
  * @brief   Initialize the TFT display module.
  *
@@ -158,7 +159,7 @@ static int tft_service_init(void)
     return 0;
 }
 INIT_COMPONENT_EXPORT(tft_service_init);
-#endif /* LDARC_COMPONENT_TFT */
+#endif /* SDK_USING_LCD */
 
 #ifdef LDARC_COMPONENT_TFT_OFF
 /**
@@ -205,5 +206,61 @@ static int simulation_service_init(void)
 }
 INIT_APP_EXPORT(simulation_service_init);
 #endif /* LDARC_COMPONENT_SIMULATION */
+
+/**
+ * @brief   Initialize the SGL GUI.
+ *
+ * @return  0 on success.
+ */
+#define PANEL_WIDTH     128
+#define PANEL_HEIGHT    128
+
+static sgl_color_t panel_buffer[PANEL_WIDTH * 10];
+static void panel_flush_area(sgl_area_t *area, sgl_color_t *src)
+{
+    uint16_t width = area->x2 - area->x1 + 1;
+    uint16_t height = area->y2 - area->y1 + 1;
+    uint32_t pixel_count = (uint32_t)width * height;
+
+    Lcd_SetRegion(area->x1, area->y1, area->x2, area->y2);
+    for (uint32_t index = 0; index < pixel_count; index++) {
+        LCD_WriteData_16Bit(src[index].full);
+    }
+
+    sgl_fbdev_flush_ready();
+}
+
+static int sgl_gui_service_init(void)
+{
+    sgl_fbinfo_t fbinfo = {
+        .xres = PANEL_WIDTH,
+        .yres = PANEL_HEIGHT,
+        .flush_area = panel_flush_area,
+        .buffer[0] = panel_buffer,
+        .buffer_size = SGL_ARRAY_SIZE(panel_buffer), 
+    };
+
+    if (sgl_fbdev_register(&fbinfo) != 0) {
+        log_e("sgl fbdev register failed.");
+        return -1;
+    }
+    if (sgl_init() != 0) {
+        log_e("sgl init failed.");
+        return -1;
+    }
+
+    sgl_obj_t *label = sgl_label_create(NULL);
+    if (label == NULL) {
+        log_e("sgl label create failed.");
+        return -1;
+    }
+    sgl_obj_set_size(label, PANEL_WIDTH, 30);
+    sgl_obj_set_pos_align(label, SGL_ALIGN_CENTER);
+    sgl_label_set_font(label, &consolas24);
+    sgl_label_set_text(label, "Hello WORD!");
+    log_i("sgl gui init success.");
+    return 0;
+}
+INIT_APP_EXPORT(sgl_gui_service_init);
 
 #endif /* USER_INIT_H_ */

@@ -391,6 +391,13 @@ components:
     interface:
       device: ''
       instance: ''
+- pkg:
+    name: SIMULATION
+    description: SIMULATION
+    enabled: true
+    interface:
+      device: ''
+      instance: ''
 testcases:
 - case:
     name: ADC

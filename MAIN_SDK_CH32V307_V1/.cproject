@@ -146,6 +146,36 @@
                   <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/imu/bmi160}&quot;"/>
                   <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/algorithm/Fusion}&quot;"/>
                   <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/log/easyLogger/easylogger/inc}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/include}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/2dball}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/arc}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/box}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/button}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/checkbox}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/circle}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/dropdown}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/ext_img}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/icon}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/keyboard}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/label}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/led}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/line}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/msgbox}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/numberkbd}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/polygon}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/progress}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/rectangle}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/ring}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/scope}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/scroll}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/slider}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/switch}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/textbox}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/textline}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/widgets/unzip_image}&quot;"/>
+                  <listOptionValue builtIn="false" value="&quot;${workspace_loc:/${ProjName}/Components/gui/sgl/source/mm/lwmem}&quot;"/>
                 </option>
                 <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.compiler.include.systempaths.2011720354" superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.compiler.include.systempaths" useByScannerDiscovery="true" valueType="includePath"/>
                 <option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.compiler.include.files.542153928" superClass="ilg.gnumcueclipse.managedbuild.cross.riscv.option.c.compiler.include.files" useByScannerDiscovery="true" valueType="includeFiles"/>
@@ -292,7 +322,7 @@
             </toolChain>
           </folderInfo>
           <sourceEntries>
-            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/display/oled|Components/utilities/multitimer|Components/Encoder_Speed|User/BMI160测试程序|Components/algorithm/Fusion/Simple|User/Fusion-main|Testcase/i2c2_mpu6050_testcase.c|Components/imu/mpu6050" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+            <entry excluding="Components/MUI/reference|Components/MUI/examples|Startup/startup_ch32v30x_D8.S|Components/LLGUI|Components/LVGL/lvgl-8.3.5/demos|Components/display/oled|Components/Encoder_Speed|User/BMI160测试程序|Components/algorithm/Fusion/Simple|User/Fusion-main|Testcase/i2c2_mpu6050_testcase.c|Components/imu/mpu6050|Components/gui/sgl/source/mm/bump|Components/gui/sgl/source/mm/other|Components/gui/sgl/source/mm/tlsf" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
           </sourceEntries>
         </configuration>
       </storageModule>
