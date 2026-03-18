@@ -150,21 +150,6 @@ static int tft_service_init(void)
 INIT_COMPONENT_EXPORT(tft_service_init);
 #endif /* SDK_USING_LCD */
 
-#ifdef LDARC_COMPONENT_TFT_OFF
-/**
- * @brief   Set the TFT display to the default off state.
- *
- * @return  0 on success.
- */
-static int tft_off_service_init(void)
-{
-    LCD_OFF();
-    log_i("LCD off success.");
-    return 0;
-}
-INIT_APP_EXPORT(tft_off_service_init);
-#endif /* LDARC_COMPONENT_TFT_OFF */
-
 #if defined(SDK_USING_TIM2) || defined(SDK_USING_TIM6) || defined(SDK_USING_TIM7)
 /**
  * @brief   Initialize timer-related GPIO resources.
@@ -180,7 +165,7 @@ static int timer_gpio_init(void)
 INIT_DEVICE_EXPORT(timer_gpio_init);
 #endif /* SDK_USING_TIM2 || SDK_USING_TIM6 || SDK_USING_TIM7 */
 
-#ifdef LDARC_COMPONENT_SIMULATION
+#ifdef SDK_USING_SIMULATION
 /**
  * @brief   Initialize the simulation module.
  *
@@ -194,7 +179,7 @@ static int simulation_service_init(void)
     return 0;
 }
 INIT_APP_EXPORT(simulation_service_init);
-#endif /* LDARC_COMPONENT_SIMULATION */
+#endif /* SDK_USING_SIMULATION */
 
 #if defined(SDK_USING_SGL)
 /**
