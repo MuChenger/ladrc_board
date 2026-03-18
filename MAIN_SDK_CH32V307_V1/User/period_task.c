@@ -58,5 +58,5 @@ static int period_task_init (void)
     return 0;
 }
 
-INIT_APP_EXPORT (period_task_init);
+INIT_PREV_EXPORT (period_task_init);
 #endif /* SDK_USING_MULTI_TIMER */

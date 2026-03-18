@@ -412,6 +412,13 @@ components:
     interface:
       device: UART
       instance: USART2
+- pkg:
+    name: SGL
+    description: SGL
+    enabled: true
+    interface:
+      device: ''
+      instance: ''
 testcases:
 - case:
     name: ADC
@@ -465,3 +472,7 @@ testcases:
     name: SGL
     description: null
     enabled: true
+- case:
+    name: SGL_LOGO
+    description: null
+    enabled: false
