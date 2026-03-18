@@ -76,6 +76,8 @@ int multiTimerStop(MultiTimer* timer);
  */
 int multiTimerYield(void);
 
+uint64_t getPlatformTicks(void);
+
 #ifdef __cplusplus
 } 
 #endif

@@ -15,7 +15,6 @@
 #include "ch32v30x.h"
 #include "sdkconfig.h"
 #include "debug.h"
-uint64_t getPlatformTicks(void);
 
 #endif /* __CH32V30x_IT_H */
 

@@ -30,7 +30,7 @@
 #include <stdio.h>
 
 #include "ch32v30x.h"
-#include "ch32v30x_it.h"
+#include "MultiTimer.h"
 
 extern int _write(int fd, char *buf, int size);
 

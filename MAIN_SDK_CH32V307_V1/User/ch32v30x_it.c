@@ -1,12 +1,10 @@
 #include "ch32v30x_it.h"
-
 #include "sgl.h"
 #include "chry_ringbuffer.h"
 
 extern chry_ringbuffer_t chry_rbuffer_tid;
 extern uint8_t g_recvFinshFlag;
-
-volatile uint32_t timer6_tick = 0;
+extern volatile uint32_t task_tick;
 
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
@@ -14,7 +12,6 @@ void TIM2_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM6_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void TIM7_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 void USART2_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
-
 
 void NMI_Handler(void)
 {
@@ -44,23 +41,14 @@ void TIM2_IRQHandler(void)
     }
 }
 
-
 void TIM6_IRQHandler(void)
 {
-    sgl_tick_inc(1);
-    timer6_tick++;
+    task_tick++;
     if (TIM_GetITStatus(TIM6, TIM_IT_Update) != RESET)
     {
         TIM_ClearITPendingBit(TIM6, TIM_IT_Update);
     }
 }
-
-
-uint64_t getPlatformTicks(void)
-{
-    return (uint64_t)timer6_tick;
-}
-
 
 void TIM7_IRQHandler(void)
 {
@@ -69,7 +57,6 @@ void TIM7_IRQHandler(void)
         TIM_ClearITPendingBit(TIM7, TIM_IT_Update);
     }
 }
-
 
 void USART2_IRQHandler(void)
 {

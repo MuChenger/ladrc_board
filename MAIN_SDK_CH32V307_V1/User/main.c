@@ -16,11 +16,6 @@ int main(void)
 
     while (1)
     {
-        sgl_task_handle();
-#ifdef SDK_USING_SIMULATION
-        Simulation_parse_command();
-#endif /* SDK_USING_SIMULATION */
-
 #ifdef SDK_USING_MULTI_TIMER
         multiTimerYield();
 #endif /* SDK_USING_MULTI_TIMER */
