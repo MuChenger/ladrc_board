@@ -83,6 +83,6 @@ void case_flash(int cnt)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_flash,
                  case_flash,
-                 test board flash);
+                 test board flash on spi2);
 
 #endif /* SDK_USING_TESTCASE_W25Q16 */

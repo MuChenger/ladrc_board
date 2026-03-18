@@ -180,6 +180,6 @@ static void motor_set_m4(uint8_t pin1_high, uint8_t pin2_high)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_motor,
                  case_motor,
-                 test board timer and motor func);
+                 test board encoder & motor);
 
 #endif /* SDK_USING_TESTCASE_MOTOR */

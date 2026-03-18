@@ -51,6 +51,6 @@ int case_rs485(int para)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_rs485,
                  case_rs485,
-                 test uart6 and rs485);
+                 test  rs485 on uart6);
 
 #endif /* SDK_USING_TESTCASE_RS485 */

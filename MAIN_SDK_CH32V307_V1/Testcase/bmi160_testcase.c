@@ -79,6 +79,6 @@ int case_bmi160(int mode, int cnt)
 
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_bmi160, case_bmi160,
-                 bmi160 test: mode(0=sensor,1=fusion) cnt);
+                 test bmi160 on i2c2);
 
 #endif /* SDK_USING_TESTCASE_IMU_BMI160 */

@@ -70,6 +70,6 @@ int case_easylogger(int mode)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_easylogger,
                  case_easylogger,
-                 easylogger test: mode(0=level,1=filter,2=hexdump,3=raw));
+                 test easylogger);
 
 #endif /* SDK_USING_TESTCASE_EASY_LOGGER */

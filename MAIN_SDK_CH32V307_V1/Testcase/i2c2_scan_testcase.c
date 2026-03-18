@@ -153,6 +153,6 @@ int case_i2cscan(void)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_i2cscan,
                  case_i2cscan,
-                 scan all enabled i2c device addresses (testcase));
+                 test i2c scan);
 
 #endif /* SDK_USING_TESTCASE_I2C_SCAN */

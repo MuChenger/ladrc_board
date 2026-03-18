@@ -53,6 +53,6 @@ int i2c_mpu6050_dmp_func(int cnt)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  i2c_mpu6050_dmp_func,
                  i2c_mpu6050_dmp_func,
-                 test i2c2 and board mpu6050 by dmp);
+                 test mpu6050 on i2c2);
 
 #endif /* SDK_USING_TESTCASE_IMU_MPU6050 */

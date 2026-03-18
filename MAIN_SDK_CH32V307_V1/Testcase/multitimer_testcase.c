@@ -41,6 +41,6 @@ int case_multitimer(uint32_t period_ms)
 SHELL_EXPORT_CMD(SHELL_CMD_PERMISSION(0) | SHELL_CMD_TYPE(SHELL_TYPE_CMD_FUNC),
                  case_multitimer,
                  case_multitimer,
-                 multitimer test: period_ms);
+                 test multitimer on timer6);
 
 #endif /* SDK_USING_TESTCASE_MULTITIMER */
