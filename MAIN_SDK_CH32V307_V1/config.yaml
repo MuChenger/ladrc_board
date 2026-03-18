@@ -461,3 +461,7 @@ testcases:
     name: RS485
     description: null
     enabled: true
+- case:
+    name: SGL
+    description: null
+    enabled: true
