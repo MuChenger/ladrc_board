@@ -1,7 +1,7 @@
 #include "ch32v30x.h"
 #include "MultiTimer.h"
 #include "auto_init.h"
-#include "simulation.h"
+#include "ladrc/sim_ladrc.h"
 #include "sgl.h"
 #include "elog.h"
 
@@ -21,7 +21,7 @@ static MultiTimer simulation_task_timer;
 
 void simulation_task_timer_callback (MultiTimer *timer, void *userData) 
 {
-    Simulation_parse_command();
+    SimLadrc_parse_command();
     multiTimerStart (timer, simulation_tick_period, simulation_task_timer_callback, NULL);
 }
 

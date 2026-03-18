@@ -405,6 +405,13 @@ components:
     interface:
       device: ''
       instance: ''
+- pkg:
+    name: BLE
+    description: BLE
+    enabled: true
+    interface:
+      device: UART
+      instance: USART2
 testcases:
 - case:
     name: ADC

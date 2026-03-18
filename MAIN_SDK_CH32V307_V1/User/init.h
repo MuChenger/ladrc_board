@@ -7,7 +7,7 @@
 #include "imu/bmi160/bmi160.h"
 #include "lshell_port.h"
 #include "MultiTimer.h"
-#include "simulation.h"
+#include "ladrc/sim_ladrc.h"
 #include "tft_st7735s.h"
 #include "timer.h"
 #include "sgl.h"
