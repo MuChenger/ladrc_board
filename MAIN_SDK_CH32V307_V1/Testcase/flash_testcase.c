@@ -37,6 +37,8 @@ void case_flash(int cnt)
     SPI_Flash_Init();
     flash_model = SPI_Flash_ReadID();
 
+    log_d("Flash ID:0x%x", flash_model);
+
     switch (flash_model) {
     case W25Q80:
         log_d("W25Q80 OK!");

@@ -115,22 +115,32 @@ void SPI_GPIO_Init(SPI_TypeDef *spi_device)
         if (SPI3_Inited) {
             return;
         }
-
         SPI_Init_Config(SDK_USING_SPI3_DEVICE,
                         RCC_APB1Periph_SPI3,
                         SDK_USING_SPI3_CS,
                         SDK_USING_SPI3_SCK,
                         SDK_USING_SPI3_MISO,
                         SDK_USING_SPI3_MOSI,
-                        SPI_CPOL_Low,
-                        SPI_CPHA_1Edge,
-                        SPI_BaudRatePrescaler_2,
+                        SPI_CPOL_High,
+                        SPI_CPHA_2Edge,
+                        SPI_BaudRatePrescaler_4,
                         7);
-        SPI_I2S_DMACmd(SDK_USING_SPI3_DEVICE, SPI_I2S_DMAReq_Tx, ENABLE);
-        SPI3_DMA_Tx_Init(DMA2_Channel2,
-                         (u32)&SPI3->DATAR,
-                         (u32)SPI3_TxData,
-                         1);
+
+        // SPI_Init_Config(SDK_USING_SPI3_DEVICE,
+        //                 RCC_APB1Periph_SPI3,
+        //                 SDK_USING_SPI3_CS,
+        //                 SDK_USING_SPI3_SCK,
+        //                 SDK_USING_SPI3_MISO,
+        //                 SDK_USING_SPI3_MOSI,
+        //                 SPI_CPOL_Low,
+        //                 SPI_CPHA_1Edge,
+        //                 SPI_BaudRatePrescaler_2,
+        //                 7);
+        // SPI_I2S_DMACmd(SDK_USING_SPI3_DEVICE, SPI_I2S_DMAReq_Tx, ENABLE);
+        // SPI3_DMA_Tx_Init(DMA2_Channel2,
+        //                  (u32)&SPI3->DATAR,
+        //                  (u32)SPI3_TxData,
+        //                  1);
         SPI3_Inited = 1;
     }
 #endif
@@ -142,41 +152,41 @@ u8 SPI_ReadWriteByte(SPI_TypeDef *spi_device, u8 TxData)
 
     SPI_GPIO_Init(spi_device);
 
-#ifdef SDK_USING_SPI2
-    if (spi_device == SDK_USING_SPI2_DEVICE) {
-        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI2_DEVICE, SPI_I2S_FLAG_TXE) == RESET) {
+#if defined SDK_USING_SPI3
+    if (spi_device == SDK_USING_SPI3_DEVICE) {
+        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI3_DEVICE, SPI_I2S_FLAG_TXE) == RESET) {
             timeout++;
             if (timeout > 200) {
                 return 0;
             }
         }
 
-        SPI_I2S_SendData(SDK_USING_SPI2_DEVICE, TxData);
+        SPI_I2S_SendData(SDK_USING_SPI3_DEVICE, TxData);
         timeout = 0;
 
-        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI2_DEVICE, SPI_I2S_FLAG_RXNE) == RESET) {
+        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI3_DEVICE, SPI_I2S_FLAG_RXNE) == RESET) {
             timeout++;
             if (timeout > 200) {
                 return 0;
             }
         }
 
-        return SPI_I2S_ReceiveData(SDK_USING_SPI2_DEVICE);
+        return SPI_I2S_ReceiveData(SDK_USING_SPI3_DEVICE);
     }
 #endif
 
-#ifdef SDK_USING_SPI3
-    if (spi_device == SDK_USING_SPI3_DEVICE) {
-        SPI3_TxData[0] = TxData;
-        DMA2_Channel2->CNTR = 1;
-        DMA_Cmd(DMA2_Channel2, ENABLE);
-        while (DMA_GetFlagStatus(DMA2_FLAG_TC2) == RESET)
-            ;
-        DMA_Cmd(DMA2_Channel2, DISABLE);
-        DMA_ClearFlag(DMA2_FLAG_TC2);
-        return 0;
-    }
-#endif
+// #ifdef SDK_USING_SPI3
+//     if (spi_device == SDK_USING_SPI3_DEVICE) {
+//         SPI3_TxData[0] = TxData;
+//         DMA2_Channel2->CNTR = 1;
+//         DMA_Cmd(DMA2_Channel2, ENABLE);
+//         while (DMA_GetFlagStatus(DMA2_FLAG_TC2) == RESET)
+//             ;
+//         DMA_Cmd(DMA2_Channel2, DISABLE);
+//         DMA_ClearFlag(DMA2_FLAG_TC2);
+//         return 0;
+//     }
+// #endif
 
     return 0;
 }

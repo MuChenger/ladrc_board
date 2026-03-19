@@ -375,8 +375,8 @@ components:
     description: LCD
     enabled: true
     interface:
-      device: SPI
-      instance: SPI3
+      device: ''
+      instance: ''
 - pkg:
     name: BMI160
     description: IMU
@@ -389,8 +389,8 @@ components:
     description: FLASH
     enabled: true
     interface:
-      device: ''
-      instance: ''
+      device: SPI
+      instance: SPI3
 - pkg:
     name: SIMULATION
     description: SIMULATION

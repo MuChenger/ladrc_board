@@ -28,12 +28,13 @@
 
 #ifndef _SFUD_CFG_H_
 #define _SFUD_CFG_H_
-
+#include "sdkconfig.h"
 #define SFUD_DEBUG_MODE
 
 #define SFUD_USING_SFDP
 
 // #define SFUD_USING_FAST_READ
+// #define SFUD_USING_QSPI
 
 #define SFUD_USING_FLASH_INFO_TABLE
 
@@ -43,9 +44,7 @@ enum {
 
 #define SFUD_FLASH_DEVICE_TABLE                                                \
 {                                                                              \
-    [SFUD_W25Q16_DEVICE_INDEX ] = {.name = "W25Q16JV", .spi.name = "SPI2"},    \
+    [SFUD_W25Q16_DEVICE_INDEX ] = {.name = "W25Q16JV", .spi.name = SDK_USING_W25Q16_INTERFACE_INSTANCE},    \
 }
-
-//#define SFUD_USING_QSPI
 
 #endif /* _SFUD_CFG_H_ */

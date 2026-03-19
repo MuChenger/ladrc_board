@@ -1,4 +1,4 @@
-/*
+ï»¿/*
  * This file is part of the Serial Flash Universal Driver Library.
  *
  * Copyright (c) 2016-2018, Armink, <armink.ztl@gmail.com>
@@ -29,20 +29,47 @@
 #include <sfud.h>
 #include <stdarg.h>
 #include "w25q16.h"
+#include "gpio_pin.h"
 static char log_buf[256];
+
+static SPI_TypeDef *sfud_get_spi_device(void) {
+    return SDK_USING_W25Q16_INTERFACE_INSTANCE;
+}
+
+static const char *sfud_get_cs_pin(void) {
+#if defined(SDK_USING_SPI2) && defined(SDK_USING_SPI3)
+    if (SDK_USING_W25Q16_INTERFACE_INSTANCE == SDK_USING_SPI2_DEVICE) return SDK_USING_SPI2_CS;
+    if (SDK_USING_W25Q16_INTERFACE_INSTANCE == SDK_USING_SPI3_DEVICE) return SDK_USING_SPI3_CS;
+    return SDK_USING_SPI2_CS;
+#elif defined(SDK_USING_SPI2)
+    return SDK_USING_SPI2_CS;
+#elif defined(SDK_USING_SPI3)
+    return SDK_USING_SPI3_CS;
+#else
+    return "PA0";
+#endif
+}
+
+static inline void sfud_cs_low(void) {
+    GPIO_WriteBit(SDK_GetPort(sfud_get_cs_pin()), SDK_GetPin(sfud_get_cs_pin()), 0);
+}
+
+static inline void sfud_cs_high(void) {
+    GPIO_WriteBit(SDK_GetPort(sfud_get_cs_pin()), SDK_GetPin(sfud_get_cs_pin()), 1);
+}
 
 
 void FLASH_HAL_SPI_Transmit(u8 *pBuffer, u16 size) {
     u16 i;
     for (i = 0; i < size; i++) {
-        SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, pBuffer[i]);
+        SPI_ReadWriteByte(sfud_get_spi_device(), pBuffer[i]);
     }
 }
 
 void FLASH_HAL_SPI_Receive(u8 *pBuffer, u16 size) {
     u16 i;
     for (i = 0; i < size; i++) {
-        pBuffer[i] = SPI_ReadWriteByte(SDK_USING_SPI2_DEVICE, 0XFF);
+        pBuffer[i] = SPI_ReadWriteByte(sfud_get_spi_device(), 0XFF);
     }
 }
 
@@ -67,6 +94,7 @@ static sfud_err spi_write_read(const sfud_spi *spi,
                                size_t read_size)
 {
     sfud_err result = SFUD_SUCCESS;
+    (void)spi;
 
     /**
      * add your spi write and read code
@@ -79,19 +107,15 @@ static sfud_err spi_write_read(const sfud_spi *spi,
         SFUD_ASSERT(read_buf);
     }
 
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 0);
-
     if (read_size != 0) {
-        GPIO_WriteBit(GPIOB, GPIO_Pin_12, 0);
+        sfud_cs_low();
         FLASH_HAL_SPI_Transmit((uint8_t *) write_buf, write_size);
         FLASH_HAL_SPI_Receive((uint8_t *) read_buf, read_size);
-        GPIO_WriteBit(GPIOB, GPIO_Pin_12, 1);
     } else {
-        GPIO_WriteBit(GPIOB, GPIO_Pin_12, 0);
+        sfud_cs_low();
         FLASH_HAL_SPI_Transmit((uint8_t *) write_buf, write_size);
-        GPIO_WriteBit(GPIOB, GPIO_Pin_12, 1);
     }
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 1);
+    sfud_cs_high();
 
     return result;
 }
@@ -120,6 +144,7 @@ static void retry_delay_100us(void) {
 
 sfud_err sfud_spi_port_init(sfud_flash *flash) {
     sfud_err result = SFUD_SUCCESS;
+    (void)flash;
 
     /**
      * add your port spi bus and device object initialize code like this:
@@ -136,23 +161,16 @@ sfud_err sfud_spi_port_init(sfud_flash *flash) {
      *    flash->retry.times = 10000; //Required
      */
 
-//    switch (flash->index) {
-//    case SFUD_W25Q16_DEVICE_INDEX: {
-        /* SPI ÍâÉè³õÊ¼»¯ */
-        SPI_GPIO_Init(SDK_USING_SPI2_DEVICE);
-        /* Í¬²½ Flash ÒÆÖ²ËùÐèµÄ½Ó¿Ú¼°Êý¾Ý */
-        flash->spi.wr = spi_write_read;
-        flash->spi.lock = spi_lock;
-        flash->spi.unlock = spi_unlock;
-        flash->spi.user_data = NULL;
-        /* about 100 microsecond delay */
-        flash->retry.delay = retry_delay_100us;
-        /* adout 60 seconds timeout */
-        flash->retry.times = 60 * 10000;
-
-//        break;
-//    }
-//    }
+    SPI_GPIO_Init(sfud_get_spi_device());
+    /* åŒæ­¥ Flash ç§»æ¤æ‰€éœ€çš„æŽ¥å£åŠæ•°æ® */
+    flash->spi.wr = spi_write_read;
+    flash->spi.lock = spi_lock;
+    flash->spi.unlock = spi_unlock;
+    flash->spi.user_data = NULL;
+    /* about 100 microsecond delay */
+    flash->retry.delay = retry_delay_100us;
+    /* adout 60 seconds timeout */
+    flash->retry.times = 60 * 10000;
 
     return result;
 }
@@ -194,5 +212,6 @@ void sfud_log_info(const char *format, ...) {
     printf("%s\r\n", log_buf);
     va_end(args);
 }
+
 
 
