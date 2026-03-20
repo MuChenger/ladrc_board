@@ -3,7 +3,6 @@
 #include "ch32v30x_it.h"
 #include "chry_ringbuffer.h"
 #include "debug.h"
-#include "elog.h"
 #include "imu/bmi160/bmi160.h"
 #include "lshell_port.h"
 #include "MultiTimer.h"
@@ -12,3 +11,5 @@
 #include "timer.h"
 #include "sgl.h"
 #include "sdkconfig.h"
+#include "flashdb.h"
+#include "elog.h"

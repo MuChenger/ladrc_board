@@ -492,6 +492,13 @@ components:
     interface:
       device: ''
       instance: ''
+- pkg:
+    name: FLASHDB
+    description: FlashDB
+    enabled: true
+    interface:
+      device: ''
+      instance: ''
 testcases:
 - case:
     name: ADC

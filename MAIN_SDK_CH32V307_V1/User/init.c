@@ -238,5 +238,32 @@ static int sgl_gui_service_init(void)
 }
 INIT_ENV_EXPORT(sgl_gui_service_init);
 
+#ifdef SDK_USING_FLASHDB
+/**
+ * @brief   Initialize the flashdb.
+ *
+ * @return  0 on success.
+ */
+
+struct fdb_kvdb default_kvdb = {0};
+
+static int flashdb_service_init(void)
+{
+    extern volatile uint8_t kvdb_inited;
+
+    fdb_err_t result;
+    struct fdb_default_kv default_kv;
+
+    result = fdb_kvdb_init(&default_kvdb, "default", "fdb_kvdb1", &default_kv, NULL);
+    if (result != FDB_NO_ERR) {
+        log_e("fdb_kvdb_init failed, err=%d.", (int)result);
+        return -1;
+    }
+    log_d("fdb_kvdb_init success.");
+    return 0;
+}
+INIT_APP_EXPORT(flashdb_service_init);
+#endif /* SDK_USING_FLASHDB */
+
 #endif /* SDK_USING_SGL */
 #endif /* USER_INIT_H_ */
