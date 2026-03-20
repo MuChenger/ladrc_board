@@ -4,6 +4,36 @@
 static u8 SPI2_Inited = 0;
 static u8 SPI3_Inited = 0;
 
+#ifdef SDK_USING_SPI2
+static u8 SPI2_TxData[1] = {0};
+
+static void SPI2_DMA_Tx_Init(DMA_Channel_TypeDef *dma_chx,
+                             u32 peripheral_addr,
+                             u32 memory_addr,
+                             u16 buffer_size)
+{
+    DMA_InitTypeDef DMA_InitStructure = {0};
+
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+    DMA_DeInit(dma_chx);
+
+    DMA_InitStructure.DMA_PeripheralBaseAddr = peripheral_addr;
+    DMA_InitStructure.DMA_MemoryBaseAddr = memory_addr;
+    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+    DMA_InitStructure.DMA_BufferSize = buffer_size;
+    DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+    DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
+    DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
+    DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
+    DMA_Init(dma_chx, &DMA_InitStructure);
+
+    DMA_ClearFlag(DMA1_FLAG_TC5);
+}
+#endif
+
 #ifdef SDK_USING_SPI3
 static u8 SPI3_TxData[1] = {0};
 
@@ -105,6 +135,15 @@ void SPI_GPIO_Init(SPI_TypeDef *spi_device)
                         SPI_CPHA_2Edge,
                         SPI_BaudRatePrescaler_4,
                         7);
+
+#if (SDK_USING_SPI2_MODE == SDK_USING_MODE_DMA)
+        SPI_I2S_DMACmd(SDK_USING_SPI2_DEVICE, SPI_I2S_DMAReq_Tx, ENABLE);
+        SPI2_DMA_Tx_Init(DMA1_Channel5,
+                         (u32)&SPI2->DATAR,
+                         (u32)SPI2_TxData,
+                         1);
+#endif /* (SDK_USING_SPI2_MODE == SDK_USING_MODE_DMA) */
+
         SPI2_Inited = 1;
         return;
     }
@@ -115,78 +154,84 @@ void SPI_GPIO_Init(SPI_TypeDef *spi_device)
         if (SPI3_Inited) {
             return;
         }
+
         SPI_Init_Config(SDK_USING_SPI3_DEVICE,
                         RCC_APB1Periph_SPI3,
                         SDK_USING_SPI3_CS,
                         SDK_USING_SPI3_SCK,
                         SDK_USING_SPI3_MISO,
                         SDK_USING_SPI3_MOSI,
-                        SPI_CPOL_High,
-                        SPI_CPHA_2Edge,
-                        SPI_BaudRatePrescaler_4,
+                        SPI_CPOL_Low,
+                        SPI_CPHA_1Edge,
+                        SPI_BaudRatePrescaler_2,
                         7);
 
-        // SPI_Init_Config(SDK_USING_SPI3_DEVICE,
-        //                 RCC_APB1Periph_SPI3,
-        //                 SDK_USING_SPI3_CS,
-        //                 SDK_USING_SPI3_SCK,
-        //                 SDK_USING_SPI3_MISO,
-        //                 SDK_USING_SPI3_MOSI,
-        //                 SPI_CPOL_Low,
-        //                 SPI_CPHA_1Edge,
-        //                 SPI_BaudRatePrescaler_2,
-        //                 7);
-        // SPI_I2S_DMACmd(SDK_USING_SPI3_DEVICE, SPI_I2S_DMAReq_Tx, ENABLE);
-        // SPI3_DMA_Tx_Init(DMA2_Channel2,
-        //                  (u32)&SPI3->DATAR,
-        //                  (u32)SPI3_TxData,
-        //                  1);
+#if (SDK_USING_SPI3_MODE == SDK_USING_MODE_DMA)
+        SPI_I2S_DMACmd(SDK_USING_SPI3_DEVICE, SPI_I2S_DMAReq_Tx, ENABLE);
+        SPI3_DMA_Tx_Init(DMA2_Channel2,
+                         (u32)&SPI3->DATAR,
+                         (u32)SPI3_TxData,
+                         1);
+#endif /* (SDK_USING_SPI3_MODE == SDK_USING_MODE_DMA) */
+
         SPI3_Inited = 1;
     }
-#endif
+#endif /* SDK_USING_SPI3 */
 }
 
 u8 SPI_ReadWriteByte(SPI_TypeDef *spi_device, u8 TxData)
 {
+    SPI_TypeDef *dev = spi_device;
     u8 timeout = 0;
 
-    SPI_GPIO_Init(spi_device);
+    if (dev == NULL) {
+        return 0;
+    }
 
-#if defined SDK_USING_SPI3
-    if (spi_device == SDK_USING_SPI3_DEVICE) {
-        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI3_DEVICE, SPI_I2S_FLAG_TXE) == RESET) {
-            timeout++;
-            if (timeout > 200) {
-                return 0;
-            }
-        }
+    SPI_GPIO_Init(dev);
 
-        SPI_I2S_SendData(SDK_USING_SPI3_DEVICE, TxData);
-        timeout = 0;
-
-        while (SPI_I2S_GetFlagStatus(SDK_USING_SPI3_DEVICE, SPI_I2S_FLAG_RXNE) == RESET) {
-            timeout++;
-            if (timeout > 200) {
-                return 0;
-            }
-        }
-
-        return SPI_I2S_ReceiveData(SDK_USING_SPI3_DEVICE);
+#if defined(SDK_USING_SPI3) && (SDK_USING_SPI3_MODE == SDK_USING_MODE_DMA)
+    if (dev == SDK_USING_SPI3_DEVICE) {
+        SPI3_TxData[0] = TxData;
+        DMA2_Channel2->CNTR = 1;
+        DMA_Cmd(DMA2_Channel2, ENABLE);
+        while (DMA_GetFlagStatus(DMA2_FLAG_TC2) == RESET)
+            ;
+        DMA_Cmd(DMA2_Channel2, DISABLE);
+        DMA_ClearFlag(DMA2_FLAG_TC2);
+        return 0;
     }
 #endif
 
-// #ifdef SDK_USING_SPI3
-//     if (spi_device == SDK_USING_SPI3_DEVICE) {
-//         SPI3_TxData[0] = TxData;
-//         DMA2_Channel2->CNTR = 1;
-//         DMA_Cmd(DMA2_Channel2, ENABLE);
-//         while (DMA_GetFlagStatus(DMA2_FLAG_TC2) == RESET)
-//             ;
-//         DMA_Cmd(DMA2_Channel2, DISABLE);
-//         DMA_ClearFlag(DMA2_FLAG_TC2);
-//         return 0;
-//     }
-// #endif
+#if defined(SDK_USING_SPI2) && (SDK_USING_SPI2_MODE == SDK_USING_MODE_DMA)
+    if (dev == SDK_USING_SPI2_DEVICE) {
+        SPI2_TxData[0] = TxData;
+        DMA1_Channel5->CNTR = 1;
+        DMA_Cmd(DMA1_Channel5, ENABLE);
+        while (DMA_GetFlagStatus(DMA1_FLAG_TC5) == RESET)
+            ;
+        DMA_Cmd(DMA1_Channel5, DISABLE);
+        DMA_ClearFlag(DMA1_FLAG_TC5);
+        return 0;
+    }
+#endif
 
-    return 0;
+    while (SPI_I2S_GetFlagStatus(dev, SPI_I2S_FLAG_TXE) == RESET) {
+        timeout++;
+        if (timeout > 200) {
+            return 0;
+        }
+    }
+
+    SPI_I2S_SendData(dev, TxData);
+    timeout = 0;
+
+    while (SPI_I2S_GetFlagStatus(dev, SPI_I2S_FLAG_RXNE) == RESET) {
+        timeout++;
+        if (timeout > 200) {
+            return 0;
+        }
+    }
+
+    return SPI_I2S_ReceiveData(dev);
 }
