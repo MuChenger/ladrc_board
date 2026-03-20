@@ -1,419 +1,152 @@
-# LADRC_Board板载外设测试与API详解
+# Testcase 使用文档
 
-[TOC]
+本文档说明 `Testcase` 目录下可通过 shell 调用的测试命令、参数含义与典型用法。
 
-## 简介
+## 1. 使用前准备
 
-本文档主要介绍LADRC_Board板载外设的使用与测试示例。
+1. 确认 `sdkconfig.h` 已开启对应测试宏（例如 `SDK_USING_TESTCASE_GPIO`、`SDK_USING_TESTCASE_W25Q16` 等）。
+2. 下载程序并打开串口 shell（默认常见为 `115200 8N1`，以工程实际配置为准）。
+3. 在 shell 输入命令执行测试。
 
-## 测试用例
+## 2. 命令速查
 
-### 1. gpio_sample.c
+| 命令 | 参数 | 说明 | 示例 |
+| --- | --- | --- | --- |
+| `case_gpio` | `cnt` | LED 翻转次数 | `case_gpio 10` |
+| `case_adc` | `cnt` | ADC 采样输出次数（<=0 默认100） | `case_adc 50` |
+| `case_ble` | `para` | UART2/BLE 回环处理字节数（<=0 默认100） | `case_ble 100` |
+| `case_rs485` | `para` | UART6/RS485 回环处理字节数（<=0 默认100） | `case_rs485 100` |
+| `case_i2cscan` | 无 | 扫描已启用 I2C 总线设备 | `case_i2cscan` |
+| `i2c_mpu6050_dmp_func` | `cnt` | MPU6050 采样次数（<=0 默认100） | `i2c_mpu6050_dmp_func 100` |
+| `case_bmi160` | `mode cnt` | BMI160 原始数据/Fusion 测试 | `case_bmi160 0 100` |
+| `case_multitimer` | `period_ms` | 启动周期定时输出 | `case_multitimer 1000` |
+| `case_easylogger` | `mode` | EasyLogger 功能测试 | `case_easylogger 2` |
+| `case_lcd` | `mode` | ST7735S 屏幕功能测试 | `case_lcd 3` |
+| `case_sgl` | `mode` | SGL 组件渲染测试 | `case_sgl 7` |
+| `case_motor` | `mode num` | 电机与编码器测试 | `case_motor 1 20` |
+| `case_flash` | `cnt` | W25Qxx 擦写读测试（参数未使用） | `case_flash 0` |
+| `case_sfud` | `mode` | SFUD 快速自检（参数未使用） | `case_sfud 0` |
+| `case_fdb` | `mode` | FlashDB KVDB 示例测试 | `case_fdb 4` |
 
-1. - [x] 测试目标
+## 3. 详细说明
 
+### 3.1 GPIO
 
-   该测试用例提供了板载LED的驱动方法。使用该测试用例可测试gpio功能。
+- 命令: `case_gpio <cnt>`
+- 行为: 按次数循环点亮/熄灭 `sdkconfig.h` 中配置的 LED1/LED2。
 
-2. - [x] 硬件连接
+### 3.2 ADC
 
+- 命令: `case_adc <cnt>`
+- 行为: 循环读取 6 路 ADC 值并打印转换结果。
 
-| LED  | PIN  |
-| :--: | :--: |
-| LED1 | PD8  |
-| LED2 | PD10 |
+### 3.3 BLE（UART2）
 
-3. - [x] 命令说明
+- 命令: `case_ble <para>`
+- 行为: 从 UART2 收到数据后回发到 UART2，并镜像到 USART1。
 
+### 3.4 RS485（UART6）
 
-|   命令    |   参数1   |    示例     |
-| :-------: | :-------: | :---------: |
-| gpio_func | int型整数 | gpio_func 5 |
+- 命令: `case_rs485 <para>`
+- 行为: 从 UART6 收到数据后回发到 UART6，并镜像到 USART1。
 
-4. - [x]  测试方法
+### 3.5 I2C 扫描
 
-<img src="figures/gpio_sample.png" style="zoom:80%;" />
+- 命令: `case_i2cscan`
+- 行为: 扫描 `sdkconfig.h` 中启用的 I2C 外设（I2C1/I2C2），打印应答地址。
 
-### 2.flash_sample.c
+### 3.6 MPU6050
 
-#### 2.1 测试说明
+- 命令: `i2c_mpu6050_dmp_func <cnt>`
+- 行为:
+  - 若编译启用 `DMP`，打印 `Yaw/Pitch/Roll`
+  - 否则打印温度
 
-1. 测试目标
+### 3.7 BMI160
 
-   测试板载flash(w25q16)是否正常工作，以及spi2外设是否正常，同时提供使用示例。
+- 命令: `case_bmi160 <mode> <cnt>`
+- `mode`:
+  - `0`: 打印加速度、陀螺仪、温度
+  - `1`: 运行 Fusion，打印欧拉角
 
-2. 测试接口
+### 3.8 MultiTimer
 
-   | FLASH(W25Q16) | PIN(SPI) |
-   | :-----------: | :------: |
-   |      CS       |   PB12   |
-   |      CLK      |   PB13   |
-   |      DO       |   PB14   |
-   |      DI       |   PB15   |
+- 命令: `case_multitimer <period_ms>`
+- 行为: 周期输出超时日志；`period_ms=0` 会提示用法并返回错误。
 
-3. 命令说明
+### 3.9 EasyLogger
 
-   |    命令    | 参数1 |   示例    |
-   | :--------: | :---: | :-------: |
-   | flash_func | NULL  | gpio_func |
+- 命令: `case_easylogger <mode>`
+- `mode`:
+  - `0`: 输出各级别彩色日志
+  - `1`: 过滤器行为测试
+  - `2`: hexdump 示例
+  - `3`: raw 输出示例
 
-4. 测试方法
+### 3.10 LCD（ST7735S）
 
-   <img src="figures/flash.png" style="zoom:80%;" />
+- 命令: `case_lcd <mode>`
+- `mode`:
+  - `1`: 关屏
+  - `2`: 开屏
+  - `3`: 多颜色清屏测试
+  - `4`: 画圆
+  - `5`: 字符显示测试
 
-#### 2.2 函数详解
+### 3.11 SGL
 
-- u16 SPI_Flash_ReadID(void);
-
-函数功能：获取其制造商ID和设备ID。
-
-函数说明：
-
-```shell
-1. 片选信号（/CS）拉低：
-2. 将片选信号（/CS）拉低，开始SPI通信。
-3. 发送命令代码：
-4. 发送0x90命令代码。
-5. 发送三个无效字节：
-6. 发送三个0x00字节。这是为了准备读取ID。
-7. 读取制造商ID和设备ID：
-8. 发送0xFF，读取制造商ID（高字节）。
-9. 发送0xFF，读取设备ID（低字节）。
-```
-
--  void SPI_Flash_Erase_Sector(u32 Dst_Addr)；
-
-函数功能：
-
-```c
-void SPI_Flash_Erase_Sector(u32 Dst_Addr)
-{
-    // 将目标地址乘以4096，因为一个扇区的大小是4096字节
-    Dst_Addr *= 4096;
-
-    // 使能写操作
-    SPI_FLASH_Write_Enable();
-
-    // 等待设备空闲
-    SPI_Flash_Wait_Busy();
-
-    // 将片选信号（CS）拉低，开始通信
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 0);
-
-    // 发送扇区擦除命令
-    SPI2_ReadWriteByte(W25X_SectorErase);
-
-    // 发送目标地址的高字节
-    SPI2_ReadWriteByte((u8)((Dst_Addr) >> 16));
-
-    // 发送目标地址的中间字节
-    SPI2_ReadWriteByte((u8)((Dst_Addr) >> 8));
-
-    // 发送目标地址的低字节
-    SPI2_ReadWriteByte((u8)Dst_Addr);
-
-    // 将片选信号（CS）拉高，结束通信
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 1);
-
-    // 等待设备空闲
-    SPI_Flash_Wait_Busy();
-}
-
-/* 
-说明：
-扇区擦除指令将指定扇区（4K 字节）内的所有存储器设置为擦除状态，即全为1（FFh）。在设备接受扇区擦除指令之前，必须执行写使能指令（状态寄存器位 WEL 必须等于 1）。该指令通过将 /CS 引脚拉低并移入指令码“20h”以及一个 24 位的扇区地址（A23-A0）来启动。在最后一个字节的第八位被锁存后，必须将 /CS 引脚拉高。如果不这样做，扇区擦除指令将不会执行。在 /CS 被拉高后，自定时的扇区擦除指令将开始，持续时间为 tSE（参见交流特性）。在扇区擦除周期进行期间，仍然可以访问读取状态寄存器指令以检查 BUSY 位的状态。BUSY 位在扇区擦除周期期间为 1，并在周期结束且设备准备再次接受其他指令时变为 0。在扇区擦除周期结束后，状态寄存器中的写使能锁存（WEL）位被清除为 0。如果被寻址的页面被块保护（CMP、SEC、TB、BP2、BP1 和 BP0）位或单独的块/扇区锁定保护，则扇区擦除指令将不会执行。
-*/
-```
-
-SPI_Flash_Wait_Busy();用于通过读寄存的方式查看当前的Flash的“忙”状态，判断其是否在忙。
-
--  void SPI_Flash_Read(u8 *pBuffer, u32 ReadAddr, u16 size)
-
-```c
-void SPI_Flash_Read(u8 *pBuffer, u32 ReadAddr, u16 size)
-{
-    u16 i;
-
-    // 将GPIOB的12号引脚拉低，选择SPI设备
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 0);
-
-    // 发送读取数据命令
-    SPI2_ReadWriteByte(W25X_ReadData);
-
-    // 发送读取地址的高字节
-    SPI2_ReadWriteByte((u8)((ReadAddr) >> 16));
-
-    // 发送读取地址的中字节
-    SPI2_ReadWriteByte((u8)((ReadAddr) >> 8));
-
-    // 发送读取地址的低字节
-    SPI2_ReadWriteByte((u8)ReadAddr);
-
-    // 循环读取指定长度的数据
-    for(i = 0; i < size; i++)
-    {
-        // 读取一个字节的数据并存储在pBuffer中
-        pBuffer[i] = SPI2_ReadWriteByte(0XFF);
-    }
-
-    // 将GPIOB的12号引脚拉高，取消选择SPI设备
-    GPIO_WriteBit(GPIOB, GPIO_Pin_12, 1);
-}
-
-```
-
-代码详解：
-
-1. **启动指令**：
-   - 通过将/CS引脚拉低启动指令。
-   - 将指令代码“03h”与24位地址（A23-A0）移入DI引脚。
-   - 代码和地址位在CLK引脚的上升沿被锁存。
-2. **数据读取**：
-   - 接收地址后，所寻址的内存位置的数据字节将在CLK的下降沿移出DO引脚，最高有效位（MSB）优先。
-   - 地址在每个数据字节移出后自动递增，允许连续的数据流。
-   - 只要时钟继续，整个内存都可以通过单个指令访问。
-3. **完成指令**：
-   - 通过将/CS拉高完成指令。
-4. **指令忽略条件**：
-   - 如果在擦除、编程或写入周期过程中（BUSY=1）发出读取数据指令，则指令将被忽略，不会对当前周期产生任何影响。
-
-- void SPI_Flash_Write(u8 *pBuffer, u32 WriteAddr, u16 size)
-
-```c
-void SPI_Flash_Write(u8 *pBuffer, u32 WriteAddr, u16 size)
-{
-    u32 secpos;
-    u16 secoff;
-    u16 secremain;
-    u16 i;
-
-    // 计算扇区号、扇区内偏移量和扇区剩余空间
-    secpos = WriteAddr / 4096; // 扇区号
-    secoff = WriteAddr % 4096; // 在当前扇区的偏移
-    secremain = 4096 - secoff; // 当前扇区剩余可以写的空间
-
-    if(size <= secremain) // 如果需要写的数据少于当前扇区剩余空间
-        secremain = size; // 更新剩余空间为需要写的数据量
-
-    while(1)
-    {
-        // 从当前扇区读取整个扇区的数据到缓存区
-        SPI_Flash_Read(SPI_FLASH_BUF, secpos * 4096, 4096);
-
-        // 检查当前扇区需要写的数据位置是否已经擦除
-        for(i = 0; i < secremain; i++)
-        {
-            if(SPI_FLASH_BUF[secoff + i] != 0XFF) // 如果需要写入的位置不是0xFF，表示有数据
-                break;
-        }
-
-        if(i < secremain) // 当前扇区存在数据，不能直接写
-        {
-            // 擦除当前扇区的数据
-            SPI_Flash_Erase_Sector(secpos);
-
-            // 再次从当前扇区读取整个扇区的数据到缓存区
-            SPI_Flash_Read(SPI_FLASH_BUF, secpos * 4096, 4096);
-
-            // 将需要写的数据拷贝到缓存区的对应位置
-            for(i = 0; i < secremain; i++)
-            {
-                SPI_FLASH_BUF[i + secoff] = pBuffer[i];
-            }
-
-            // 从头开始写整个扇区的数据
-            SPI_Flash_Write_NoCheck(SPI_FLASH_BUF, secpos * 4096, 4096);
-        }
-        else
-        {
-            // 直接写入数据
-            SPI_Flash_Write_NoCheck(pBuffer, WriteAddr, secremain);
-        }
-
-        if(size == secremain) // 如果剩余数据与需要写的数据数量一致
-        {
-            break; // 写入完成，退出循环
-        }
-        else
-        {
-            // 更新写入参数，准备写入下一个扇区
-            secpos++; // 扇区号偏移
-            secoff = 0; // 偏移量重置为0
-
-            pBuffer += secremain; // 移动写缓冲区指针
-            WriteAddr += secremain; // 移动写地址
-            size -= secremain; // 更新剩余需要写的数据量
-
-            if(size > 4096) // 如果剩余数据量大于一个扇区的大小
-            {
-                secremain = 4096; // 更新剩余空间为一个扇区的大小
-            }
-            else
-            {
-                secremain = size; // 更新剩余空间为剩余数据量
-            }
-        }
-    }
-}
-```
-
-### 3.uart2_ble_sample.c
-
-#### 3.1 测试说明
-
-1. 测试目标
-
-   测试板载蓝牙模组是否正常工作，蓝牙模组采用SPP透传方式，以及uart2外设是否正常，同时提供使用示例。
-
-2. 测试接口
-
-   | BLE  | PIN(UART2) |
-   | :--: | :--------: |
-   |  TX  |    PD5     |
-   |  RX  |    PD6     |
-
-3. 命令说明
-
-   |       命令       |   参数1   |         示例         |
-   | :--------------: | :-------: | :------------------: |
-   | uart2_ble_sample | int型整数 | uart2_ble_sample 100 |
-
-   > 注：参数1：接收的字符的个数，当接收到传入参数的个数的字符后，退出当前的测试用例。
-
-4. 测试方法
-
-   1. 启动两个串口终端
-   2. 串口终端1与板载串口shell相连，波特率115200
-   3. 串口终端2与蓝牙虚拟串口相连
-   4. 使用串口终端2发送字符，在串口终端1输出发送的字符，同时串口终端2回显字符
-
-   <img src="figures/uart2_ble_sample.png" style="zoom:80%;" />
-
-### 4.uart6_rs485_sample.c
-
-#### 4.1 测试说明
-
-1. 测试目标
-
-   测试板载RS485是否正常工作，以及uart6外设是否正常，同时提供使用示例。
-
-2. 测试接口
-
-   | RS485 | PIN(UART6) |
-   | :---: | :--------: |
-   |  TX   |    PC0     |
-   |  RX   |    PC1     |
-
-3. 命令说明
-
-   |        命令        |   参数1   |         示例          |
-   | :----------------: | :-------: | :-------------------: |
-   | uart6_rs485_sample | int型整数 | uart6_rs485_sample100 |
-
-   > 注：参数1：接收的字符的个数，当接收到传入参数的个数的字符后，退出当前的测试用例。
-
-4. 测试方法
-
-   1. 启动两个串口终端
-   2. 串口终端1与板载串口shell相连，波特率4800
-   3. 串口终端2与蓝牙虚拟串口相连
-   4. 使用串口终端2发送字符，在串口终端1输出发送的字符，同时串口终端2回显字符
-
-<img src="figures/uart6_rs485_sample.png" style="zoom:80%;" />
-
-### 5.i2c2_mpu6050_sample.c
-
-#### 5.1 测试说明
-
-1. 测试目标
-
-   测试板载MPU6050是否正常工作，以及I2C2外设是否正常，同时提供使用示例。
-
-2. 测试接口
-
-   | MPU6050 | PIN(I2C2) |
-   | :-----: | :-------: |
-   |   SCL   |           |
-   |   SDA   |           |
-
-3. 命令说明
-
-   |         命令          |   参数1   |           示例            |
-   | :-------------------: | :-------: | :-----------------------: |
-   | i2c_mpu6050_dmp_func  | int型整数 | i2c_mpu6050_dmp_func 100  |
-   | i2c_mpu6050_soft_func | int型整数 | i2c_mpu6050_soft_func 100 |
-
-   > 注：参数1：接收的字符的个数，当接收到传入参数的个数的字符后，退出当前的测试用例。
-
-4. 测试方法
-
-   
-
-### 6.i2c2_mpu6050_sample.c
-
-#### 5.1 测试说明
-
-1. 测试目标
-
-   测试板载MPU6050是否正常工作，以及I2C2外设是否正常，同时提供使用示例。
-
-2. 测试接口
-
-   | MPU6050 | PIN(I2C2) |
-   | :-----: | :-------: |
-   |   SCL   |           |
-   |   SDA   |           |
-
-3. 命令说明
-
-   |         命令          |   参数1   |           示例            |
-   | :-------------------: | :-------: | :-----------------------: |
-   | i2c_mpu6050_dmp_func  | int型整数 | i2c_mpu6050_dmp_func 100  |
-   | i2c_mpu6050_soft_func | int型整数 | i2c_mpu6050_soft_func 100 |
-
-   > 注：参数1：接收的字符的个数，当接收到传入参数的个数的字符后，退出当前的测试用例。
-
-4. 测试方法
-
-
-
-
-### 7.spi3_lcd_st7735s_sample.c
-
-#### 7.1 测试说明
-
-1. 测试目标
-
-   测试板载LCD是否正常工作，以及SPI3外设是否正常，同时提供使用示例。
-
-2. 测试接口
-
-   | MPU6050 | PIN(I2C2) |
-   | :-----: | :-------: |
-   |   CLK   |           |
-   |  MOSI   |           |
-   |   RES   |           |
-   |   DC    |           |
-   |   CS    |           |
-   |   BLK   |           |
-
-3. 命令说明
-
-   | 命令 |   参数1   | 示例 |
-   | :--: | :-------: | :--: |
-   |      | int型整数 |      |
-
-   > 注：参数1：接收的字符的个数，当接收到传入参数的个数的字符后，退出当前的测试用例。
-
-4. 测试方法
-
-
-
-
-
-
-
-
-
-
-
+- 命令: `case_sgl <mode>`
+- `mode`:
+  - `0`: label
+  - `1`: button
+  - `2`: slider
+  - `3`: progress
+  - `4`: switch + checkbox
+  - `5`: led + ring
+  - `6`: rect + line
+  - `7`: 组合动画 demo
+
+### 3.12 电机与编码器
+
+- 命令: `case_motor <mode> <num>`
+- `mode`:
+  - `1`: M1 + TIM5
+  - `2`: M2 + TIM8
+  - `3`: M3 + TIM3
+  - `4`: M4 + TIM4
+  - `5`: 四路联合测试
+- `num`: 采样打印次数（<=0 默认10）
+
+### 3.13 W25Qxx 原始驱动测试
+
+- 命令: `case_flash 0`
+- 行为: 读取 ID、擦除扇区、写入测试字符串、再读回。
+
+### 3.14 SFUD 快速自检
+
+- 命令: `case_sfud 0`
+- 行为: 初始化 SFUD，读取状态寄存器和起始地址数据头。
+
+### 3.15 FlashDB KVDB 示例
+
+- 命令: `case_fdb <mode>`
+- `mode`:
+  - `1`: 字符串 KV 写/读（`hello`）
+  - `2`: Blob KV 写/读（`count_blob`）
+  - `3`: 删除 KV 并验证
+  - `4`: 迭代并打印全部 KV
+  - 其它值: 打印帮助并输出当前 KV 列表
+
+## 4. 常见问题
+
+1. 命令找不到  
+原因: 对应测试宏未启用或源文件未编入工程。  
+建议: 检查 `sdkconfig.h` 与工程文件列表。
+
+2. 传感器类测试无数据  
+原因: 硬件未连接、引脚配置不一致、总线冲突。  
+建议: 先执行 `case_i2cscan` 确认设备地址是否可见。
+
+3. FlashDB/SFUD 初始化失败  
+原因: SPI/CS 引脚配置错误或外部 Flash 不在线。  
+建议: 先跑 `case_flash`、`case_sfud`，确认底层读写正常后再跑 `case_fdb`。
