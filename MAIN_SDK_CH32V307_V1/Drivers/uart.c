@@ -42,7 +42,7 @@ static void UART_Init_Config(USART_TypeDef *uart_device,
 #ifdef SDK_USING_USART2
 static void USART_EnableRxIrq(void)
 {
-#if (SDK_USING_USART2_ISR)
+#if (SDK_USING_USART2_MODE == SDK_USING_MODE_INTERRUPT)
     NVIC_InitTypeDef NVIC_InitStructure = {0};
 
     USART_ITConfig(SDK_USING_USART2_DEVICE, USART_IT_RXNE, ENABLE);
@@ -106,4 +106,3 @@ void UART_GPIO_Init(void)
                       GPIO_FullRemap_USART8);
 #endif
 }
-

@@ -18,8 +18,8 @@ on_chip_peripherals:
         pin: PA10
       - name: BaudRate
         pin: 115200
-      - name: ISR
-        pin: 0
+      - name: MODE
+        pin: INTERRUPT
     - name: USART2
       enabled: true
       pins:
@@ -29,8 +29,8 @@ on_chip_peripherals:
         pin: PD6
       - name: BaudRate
         pin: 9600
-      - name: ISR
-        pin: 1
+      - name: MODE
+        pin: INTERRUPT
     - name: UART4
       enabled: true
       pins:
@@ -40,8 +40,8 @@ on_chip_peripherals:
         pin: PB1
       - name: BaudRate
         pin: 9600
-      - name: ISR
-        pin: 0
+      - name: MODE
+        pin: POLLING
     - name: UART6
       enabled: true
       pins:
@@ -51,8 +51,8 @@ on_chip_peripherals:
         pin: PC1
       - name: BaudRate
         pin: 9600
-      - name: ISR
-        pin: 0
+      - name: MODE
+        pin: POLLING
     - name: UART7
       enabled: true
       pins:
@@ -62,8 +62,8 @@ on_chip_peripherals:
         pin: PE13
       - name: BaudRate
         pin: 115200
-      - name: ISR
-        pin: 0
+      - name: MODE
+        pin: POLLING
     - name: UART8
       enabled: true
       pins:
@@ -73,8 +73,8 @@ on_chip_peripherals:
         pin: PE15
       - name: BaudRate
         pin: 115200
-      - name: ISR
-        pin: 0
+      - name: MODE
+        pin: POLLING
 - device:
     name: SPI
     description: Serial Peripheral Interface
@@ -90,6 +90,8 @@ on_chip_peripherals:
         pin: PB14
       - name: CS
         pin: PB15
+      - name: MODE
+        pin: POLLING
     - name: SPI3
       enabled: true
       pins:
@@ -101,6 +103,8 @@ on_chip_peripherals:
         pin: PB5
       - name: CS
         pin: PA15
+      - name: MODE
+        pin: POLLING
 - device:
     name: I2C
     description: Inter-Integrated Circuit
@@ -112,6 +116,8 @@ on_chip_peripherals:
         pin: PB8
       - name: SDA
         pin: PB9
+      - name: MODE
+        pin: POLLING
     - name: I2C2
       enabled: true
       pins:
@@ -119,6 +125,8 @@ on_chip_peripherals:
         pin: PB10
       - name: SDA
         pin: PB11
+      - name: MODE
+        pin: POLLING
 - device:
     name: ADC
     description: Analog-to-Digital Converter
@@ -138,6 +146,8 @@ on_chip_peripherals:
         pin: PC4
       - name: IN15
         pin: PC5
+      - name: MODE
+        pin: POLLING
 - device:
     name: SDIO
     description: SDIO Interface
@@ -159,24 +169,47 @@ on_chip_peripherals:
         pin: PD2
       - name: SWITCH
         pin: PD7
+      - name: MODE
+        pin: POLLING
 - device:
     name: GPIO
     description: I/O
     instances:
     - name: GPIOA
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOB
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOC
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOD
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOE
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOF
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
     - name: GPIOG
       enabled: true
+      pins:
+      - name: MODE
+        pin: POLLING
 - device:
     name: TIM
     description: TIM2/6/7
@@ -188,13 +221,17 @@ on_chip_peripherals:
         pin: 9
       - name: PSC
         pin: 9599
+      - name: MODE
+        pin: POLLING
     - name: TIM6
       enabled: true
       pins:
       - name: ARR
         pin: 9
       - name: PSC
-        pin: 9599
+        pin: '9599'
+      - name: MODE
+        pin: POLLING
     - name: TIM7
       enabled: true
       pins:
@@ -202,6 +239,8 @@ on_chip_peripherals:
         pin: 9
       - name: PSC
         pin: 9599
+      - name: MODE
+        pin: POLLING
 - device:
     name: TIM_Encoder
     description: TIM Encoder MODE
@@ -213,6 +252,8 @@ on_chip_peripherals:
         pin: PA6
       - name: PIN_B
         pin: PA7
+      - name: MODE
+        pin: POLLING
     - name: TIM4
       enabled: true
       pins:
@@ -220,6 +261,8 @@ on_chip_peripherals:
         pin: PB6
       - name: PIN_B
         pin: PB7
+      - name: MODE
+        pin: POLLING
     - name: TIM5
       enabled: true
       pins:
@@ -227,6 +270,8 @@ on_chip_peripherals:
         pin: PA0
       - name: PIN_B
         pin: PA1
+      - name: MODE
+        pin: POLLING
     - name: TIM8
       enabled: true
       pins:
@@ -234,6 +279,8 @@ on_chip_peripherals:
         pin: PC6
       - name: PIN_B
         pin: PC7
+      - name: MODE
+        pin: POLLING
 - device:
     name: TIM_PWM
     description: TIM PWM MODE
@@ -249,6 +296,8 @@ on_chip_peripherals:
         pin: PD13
       - name: PWM4
         pin: PD15
+      - name: MODE
+        pin: POLLING
 - device:
     name: MOTOR_DIR
     description: MOTOR DIR PIN
@@ -260,6 +309,8 @@ on_chip_peripherals:
         pin: PE0
       - name: PIN2
         pin: PE1
+      - name: MODE
+        pin: POLLING
     - name: M2
       enabled: true
       pins:
@@ -267,6 +318,8 @@ on_chip_peripherals:
         pin: PE2
       - name: PIN2
         pin: PE3
+      - name: MODE
+        pin: POLLING
     - name: M3
       enabled: true
       pins:
@@ -274,6 +327,8 @@ on_chip_peripherals:
         pin: PE4
       - name: PIN2
         pin: PE5
+      - name: MODE
+        pin: POLLING
     - name: M4
       enabled: true
       pins:
@@ -281,6 +336,8 @@ on_chip_peripherals:
         pin: PE6
       - name: PIN2
         pin: PE7
+      - name: MODE
+        pin: POLLING
     - name: STOP
       enabled: true
       pins:
@@ -288,6 +345,8 @@ on_chip_peripherals:
         pin: PE8
       - name: PIN2
         pin: PE9
+      - name: MODE
+        pin: POLLING
 - device:
     name: LED
     description: LED
@@ -299,6 +358,8 @@ on_chip_peripherals:
         pin: PD8
       - name: LED2
         pin: PD10
+      - name: MODE
+        pin: POLLING
 - device:
     name: KEY
     description: KEY
@@ -314,6 +375,8 @@ on_chip_peripherals:
         pin: PD3
       - name: KEY3
         pin: PD4
+      - name: MODE
+        pin: POLLING
 - device:
     name: SCREEN
     description: LCD
@@ -327,6 +390,8 @@ on_chip_peripherals:
         pin: PD14
       - name: BLK
         pin: PE10
+      - name: MODE
+        pin: POLLING
 - device:
     name: USB DEVICE
     description: USB DEVICE
@@ -338,6 +403,8 @@ on_chip_peripherals:
         pin: PA12
       - name: DM
         pin: PA11
+      - name: MODE
+        pin: POLLING
 - device:
     name: RTC
     description: RTC PIN
@@ -349,6 +416,8 @@ on_chip_peripherals:
         pin: PC14
       - name: B
         pin: PC15
+      - name: MODE
+        pin: POLLING
 - device:
     name: SWD
     description: SWD Interface
@@ -360,6 +429,8 @@ on_chip_peripherals:
         pin: PA13
       - name: CLK
         pin: PA14
+      - name: MODE
+        pin: POLLING
 - device:
     name: BOOT
     description: BOOT PIN
@@ -369,6 +440,8 @@ on_chip_peripherals:
       pins:
       - name: BOOT1
         pin: PB2
+      - name: MODE
+        pin: POLLING
 components:
 - pkg:
     name: LCD
