@@ -1,4 +1,5 @@
 PyQt5>=5.15
 pyqtgraph>=0.13
 pyserial>=3.5
+PyOpenGL>=3.1
 

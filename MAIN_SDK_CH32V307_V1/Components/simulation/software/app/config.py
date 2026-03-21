@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 @dataclass
 class AppConfig:
-    app_name: str = "Control Simulation Host"
+    app_name: str = "控制仿真上位机"
     ui_refresh_hz: int = 30
     sim_hz: int = 100
     serial_tx_hz: int = 25
@@ -14,4 +14,3 @@ class AppConfig:
 
 
 DEFAULT_CONFIG = AppConfig()
-

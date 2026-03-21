@@ -48,7 +48,7 @@ class SerialWorker(QtCore.QObject):
     @QtCore.pyqtSlot(str, int)
     def open(self, port_name: str, baudrate: int) -> None:
         if serial is None:
-            self.error.emit("pyserial not installed")
+            self.error.emit("未安装 pyserial")
             return
         self.close()
         try:
@@ -62,7 +62,7 @@ class SerialWorker(QtCore.QObject):
         except Exception as exc:
             self._serial = None
             self._running = False
-            self.error.emit(f"Open serial failed: {exc}")
+            self.error.emit(f"打开串口失败: {exc}")
             self.connection_changed.emit(False, "")
 
     @QtCore.pyqtSlot()
@@ -87,7 +87,7 @@ class SerialWorker(QtCore.QObject):
             self._serial.write(payload)
             self._tx_frames += 1
         except Exception as exc:
-            self.error.emit(f"Serial send failed: {exc}")
+            self.error.emit(f"串口发送失败: {exc}")
 
     @QtCore.pyqtSlot(object)
     def send_feedback(self, feedback: SimFeedback) -> None:
@@ -102,7 +102,7 @@ class SerialWorker(QtCore.QObject):
             self._tx_frames += 1
             self._seq = (self._seq + 1) & 0xFFFF
         except Exception as exc:
-            self.error.emit(f"Serial send feedback failed: {exc}")
+            self.error.emit(f"串口反馈发送失败: {exc}")
 
     @QtCore.pyqtSlot(bool)
     def set_binary_tx(self, enabled: bool) -> None:
@@ -127,7 +127,7 @@ class SerialWorker(QtCore.QObject):
             for line in lines:
                 self.line_received.emit(line)
         except Exception as exc:
-            self.error.emit(f"Serial read failed: {exc}")
+            self.error.emit(f"串口读取失败: {exc}")
             self.close()
 
     def _emit_stats(self) -> None:
