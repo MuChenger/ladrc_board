@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "window": {
+    "geometry": "AdnQywADAAD/////////9wAAB4AAAAQGAAAACQAAACYAAAZIAAAD0QAAAAACAAAAB4AAAAAAAAAAHQAAB38AAAQF",
+    "state": "AAAA/wAAAAD9AAAAAwAAAAAAAAC+AAACrPwCAAAAAfwAAABOAAACrAAAAI4BAAAW+gAAAAACAAAAA/sAAAAeAGQAbwBjAGsAXwBjAG8AbgBuAGUAYwB0AGkAbwBuAQAAAAD/////AAAAdwD////7AAAAGABkAG8AYwBrAF8AYwBvAG4AdAByAG8AbAEAAAAA/////wAAAHcA////+wAAABoAZABvAGMAawBfAGMAaABhAG4AbgBlAGwAcwEAAAAA/////wAAAHcA////AAAAAQAAAQcAAAKs/AIAAAAB/AAAAE4AAAKsAAACPAEAABb6AAAAAAIAAAAC+wAAABQAZABvAGMAawBfAG0AbwBkAGUAbAEAAAAA/////wAAAf8A////+wAAABYAZABvAGMAawBfAHMAdABhAHQAdQBzAQAAAAD/////AAACJQD///8AAAADAAAHgAAAANL8AQAAAAH7AAAAGABkAG8AYwBrAF8AYwBvAG4AcwBvAGwAZQEAAAAAAAAHgAAAAJwA////AAAFswAAAqwAAAAEAAAABAAAAAgAAAAI/AAAAAEAAAACAAAAAQAAACIAdwBvAHIAawBiAGUAbgBjAGgAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA="
+  },
+  "serial_panel": {
+    "port": "COM7",
+    "baud": "115200",
+    "binary": true
+  },
+  "command_panel": {
+    "algorithm": "PID",
+    "reference": 0.0,
+    "command_text": "",
+    "disturbance_level": "medium"
+  },
+  "preset_panel": {
+    "presets": [
+      {
+        "name": "状态查询",
+        "command": "GET STATUS",
+        "type": "none",
+        "value": ""
+      },
+      {
+        "name": "比例参数",
+        "command": "SET KP",
+        "type": "float",
+        "value": 1.2
+      },
+      {
+        "name": "积分参数",
+        "command": "SET KI",
+        "type": "float",
+        "value": 0.3
+      },
+      {
+        "name": "微分参数",
+        "command": "SET KD",
+        "type": "float",
+        "value": 0.05
+      },
+      {
+        "name": "参考目标",
+        "command": "SET REF",
+        "type": "float",
+        "value": 2.0
+      }
+    ],
+    "current_index": 0,
+    "editor_state": {
+      "name": "状态查询",
+      "command": "GET STATUS",
+      "type": "none",
+      "value": ""
+    }
+  },
+  "plot_panel": {
+    "window_sec": 20.0,
+    "preset": "balance",
+    "follow_latest": true,
+    "mouse_mode": "pan",
+    "cursor_enabled": false,
+    "annotation_enabled": false,
+    "measurement_enabled": false,
+    "measure_channel": "feedback",
+    "channels": {
+      "ref": true,
+      "feedback": true,
+      "u_cmd": true,
+      "roll": true,
+      "pitch": true,
+      "yaw": false,
+      "vertical": true,
+      "vertical_rate": false,
+      "disturbance": false
+    }
+  },
+  "model_panel": {
+    "model_type": "rov",
+    "mode": "attitude",
+    "follow": true,
+    "settings_page": "builtin",
+    "builtin_colors": {
+      "rov_body": "#b8c2cb",
+      "rov_accent": "#297fce",
+      "aircraft_body": "#b8c2cb",
+      "aircraft_accent": "#2f7fd1",
+      "generic_body": "#a9b5c1",
+      "generic_accent": "#2f7fd1"
+    },
+    "external_model": {
+      "enabled": false,
+      "path": "",
+      "roll": 0.0,
+      "pitch": 90.0,
+      "yaw": 0.0,
+      "scale": 1.0,
+      "color": "#bcc3cc",
+      "alpha": 0.98,
+      "draw_edges": false
+    }
+  }
+}

@@ -711,6 +711,135 @@ class Model3DPanel(QtWidgets.QGroupBox):
     def current_model_type(self) -> str:
         return self._model_type
 
+    def get_state(self) -> dict:
+        return {
+            "model_type": self._model_type,
+            "mode": self._mode,
+            "follow": self.follow_cb.isChecked(),
+            "settings_page": self.settings_combo.currentData() if hasattr(self, "settings_combo") else "builtin",
+            "builtin_colors": {
+                "rov_body": self._default_rov_body_color.name(),
+                "rov_accent": self._default_rov_float_color.name(),
+                "aircraft_body": self._aircraft_body_color.name(),
+                "aircraft_accent": self._aircraft_accent_color.name(),
+                "generic_body": self._generic_body_color.name(),
+                "generic_accent": self._generic_accent_color.name(),
+            },
+            "external_model": {
+                "enabled": bool(self._external_rov_loaded),
+                "path": str(self._external_rov_path) if self._external_rov_path is not None else "",
+                "roll": float(self._external_model_roll),
+                "pitch": float(self._external_model_pitch),
+                "yaw": float(self._external_model_yaw),
+                "scale": float(self._external_model_scale),
+                "color": self._external_model_color.name(),
+                "alpha": float(self._external_model_alpha),
+                "draw_edges": bool(self._external_model_draw_edges),
+            },
+        }
+
+    def apply_state(self, state: dict):
+        if not isinstance(state, dict):
+            return
+
+        builtin_colors = state.get("builtin_colors")
+        if isinstance(builtin_colors, dict):
+            for attr_name, key in (
+                ("_default_rov_body_color", "rov_body"),
+                ("_default_rov_float_color", "rov_accent"),
+                ("_aircraft_body_color", "aircraft_body"),
+                ("_aircraft_accent_color", "aircraft_accent"),
+                ("_generic_body_color", "generic_body"),
+                ("_generic_accent_color", "generic_accent"),
+            ):
+                color_value = builtin_colors.get(key)
+                color = QtGui.QColor(str(color_value))
+                if color.isValid():
+                    setattr(self, attr_name, color)
+            self._sync_builtin_color_controls()
+            self._apply_builtin_model_colors()
+
+        model_type = state.get("model_type")
+        if model_type is not None:
+            index = self.model_combo.findData(model_type)
+            if index >= 0:
+                self.model_combo.setCurrentIndex(index)
+
+        external_state = state.get("external_model")
+        if isinstance(external_state, dict):
+            color = QtGui.QColor(str(external_state.get("color", "")))
+            if color.isValid():
+                self._external_model_color = color
+            try:
+                self.model_roll_spin.setValue(float(external_state.get("roll", self._external_model_roll)))
+                self.model_pitch_spin.setValue(float(external_state.get("pitch", self._external_model_pitch)))
+                self.model_yaw_spin.setValue(float(external_state.get("yaw", self._external_model_yaw)))
+                self.model_scale_spin.setValue(float(external_state.get("scale", self._external_model_scale)))
+                self.model_alpha_spin.setValue(float(external_state.get("alpha", self._external_model_alpha)))
+            except (TypeError, ValueError):
+                pass
+            self.model_edges_cb.setChecked(bool(external_state.get("draw_edges", self._external_model_draw_edges)))
+            self._sync_external_model_material_controls()
+
+            external_enabled = bool(external_state.get("enabled"))
+            external_path = str(external_state.get("path", "")).strip()
+            if external_enabled and external_path:
+                path = Path(external_path)
+                if path.exists():
+                    self._set_external_rov_model(path)
+                else:
+                    self.use_default_rov_model()
+            elif not external_enabled:
+                self.use_default_rov_model()
+
+        mode_key = state.get("mode")
+        if mode_key is not None:
+            index = self.mode_combo.findData(mode_key)
+            if index >= 0:
+                self.mode_combo.setCurrentIndex(index)
+
+        if "follow" in state:
+            self.follow_cb.setChecked(bool(state.get("follow")))
+
+        settings_page = state.get("settings_page")
+        if settings_page is not None and hasattr(self, "settings_combo"):
+            index = self.settings_combo.findData(settings_page)
+            if index >= 0:
+                self.settings_combo.setCurrentIndex(index)
+
+        self._sync_builtin_color_controls()
+        self._apply_builtin_model_colors()
+        self._sync_external_model_material_controls()
+        self._update_external_control_state()
+        self._update_model_hint()
+        self._update_scene_hud()
+
+    def reset_to_defaults(self):
+        model_index = self.model_combo.findData("rov")
+        if model_index >= 0:
+            self.model_combo.setCurrentIndex(model_index)
+        self._mode = "attitude"
+        mode_index = self.mode_combo.findData("attitude")
+        if mode_index >= 0:
+            self.mode_combo.setCurrentIndex(mode_index)
+        self.follow_cb.setChecked(True)
+        settings_index = self.settings_combo.findData("builtin")
+        if settings_index >= 0:
+            self.settings_combo.setCurrentIndex(settings_index)
+        self._default_rov_body_color = QtGui.QColor("#b8c2cb")
+        self._default_rov_float_color = QtGui.QColor("#297fce")
+        self._aircraft_body_color = QtGui.QColor("#b8c2cb")
+        self._aircraft_accent_color = QtGui.QColor("#2f7fd1")
+        self._generic_body_color = QtGui.QColor("#a9b5c1")
+        self._generic_accent_color = QtGui.QColor("#2f7fd1")
+        self._reset_external_model_adjust()
+        self._reset_external_model_material()
+        self.use_default_rov_model()
+        self._sync_builtin_color_controls()
+        self._apply_builtin_model_colors()
+        self.clear_trail()
+        self.reset_view()
+
     def vertical_metric_label(self) -> str:
         if self._model_type == "aircraft":
             return "高度"

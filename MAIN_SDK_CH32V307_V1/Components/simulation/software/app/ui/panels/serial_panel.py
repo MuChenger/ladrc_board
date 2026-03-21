@@ -9,7 +9,6 @@ class SerialPanel(QtWidgets.QGroupBox):
 
     def __init__(self, parent=None):
         super().__init__("串口连接", parent)
-        self.setMinimumWidth(320)
         self._build()
 
     def _build(self):
@@ -18,7 +17,7 @@ class SerialPanel(QtWidgets.QGroupBox):
         layout.setVerticalSpacing(10)
 
         self.port_combo = QtWidgets.QComboBox()
-        self.port_combo.setMinimumWidth(170)
+        self.port_combo.setMinimumWidth(140)
 
         self.baud_combo = QtWidgets.QComboBox()
         self.baud_combo.addItems(["115200", "230400", "460800", "921600"])
@@ -68,3 +67,35 @@ class SerialPanel(QtWidgets.QGroupBox):
         self.connect_btn.setEnabled(not connected)
         self.disconnect_btn.setEnabled(connected)
         self.state_label.setText(f"已连接 {desc}".strip() if connected else "未连接")
+
+    def get_state(self) -> dict:
+        return {
+            "port": self.port_combo.currentText(),
+            "baud": self.baud_combo.currentText(),
+            "binary": self.binary_cb.isChecked(),
+        }
+
+    def apply_state(self, state: dict):
+        if not isinstance(state, dict):
+            return
+        port = str(state.get("port", "")).strip()
+        if port:
+            index = self.port_combo.findText(port)
+            if index >= 0:
+                self.port_combo.setCurrentIndex(index)
+
+        baud = str(state.get("baud", "")).strip()
+        if baud:
+            index = self.baud_combo.findText(baud)
+            if index >= 0:
+                self.baud_combo.setCurrentIndex(index)
+
+        if "binary" in state:
+            self.binary_cb.setChecked(bool(state.get("binary")))
+
+    def reset_to_defaults(self):
+        if self.port_combo.count() > 0:
+            self.port_combo.setCurrentIndex(0)
+        baud_index = self.baud_combo.findText("115200")
+        self.baud_combo.setCurrentIndex(max(baud_index, 0))
+        self.binary_cb.setChecked(True)

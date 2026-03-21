@@ -1,18 +1,22 @@
 from PyQt5 import QtWidgets
 
 
-class LogPanel(QtWidgets.QGroupBox):
+class LogPanel(QtWidgets.QWidget):
     def __init__(self, parent=None):
-        super().__init__("日志输出", parent)
+        super().__init__(parent)
         self._build()
 
     def _build(self):
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setSpacing(10)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
 
         toolbar = QtWidgets.QHBoxLayout()
-        self.clear_btn = QtWidgets.QPushButton("清空日志")
+        toolbar.setContentsMargins(0, 0, 0, 0)
+
+        self.clear_btn = QtWidgets.QPushButton("清空")
         self.copy_btn = QtWidgets.QPushButton("复制全部")
+
         toolbar.addWidget(self.clear_btn)
         toolbar.addWidget(self.copy_btn)
         toolbar.addStretch(1)

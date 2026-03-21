@@ -1,3 +1,4 @@
+import json
 import sys
 import time
 from pathlib import Path
@@ -21,6 +22,15 @@ from .panels.status_panel import StatusPanel
 
 ALGO_NAME = {0: "PID", 1: "LADRC", 2: "开环"}
 MODEL_NAME = {"rov": "水下机器人", "aircraft": "飞行器", "generic": "通用载体"}
+SOFTWARE_ROOT = Path(__file__).resolve().parents[2]
+USER_SETTINGS_PATH = SOFTWARE_ROOT / "user_settings.json"
+DISTURBANCE_LEVEL_TEXT = {
+    "off": "关闭",
+    "low": "低",
+    "medium": "中",
+    "high": "高",
+    "extreme": "极高",
+}
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -37,6 +47,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.resize(1600, 940)
 
         self._default_window_state = None
+        self._default_window_geometry = None
         self._latest_telemetry = Telemetry()
         self._feedback_by_model = self._build_feedback_store()
         self._simulators = self._build_simulators()
@@ -45,6 +56,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_serial_tx = 0.0
         self._last_rx_ms = 0
         self._last_stats = {"rx_frames": 0, "tx_frames": 0, "parse_errors": 0, "latency_ms": 0}
+        self._disturbance_level_key = "medium"
+        self._disturbance_scale = 1.0
 
         self.recorder = CsvRecorder()
 
@@ -55,8 +68,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_ports()
         self._on_model_context_changed()
         self._capture_default_layout()
+        self._load_persistent_settings()
 
     def closeEvent(self, event):
+        self._save_persistent_settings()
         self.close_serial_signal.emit()
         self.worker_thread.quit()
         self.worker_thread.wait(1000)
@@ -133,10 +148,15 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.command_panel.send_command.connect(self._send_command)
         self.command_panel.console_message.connect(self.log_panel.append_line)
+        self.command_panel.disturbance_level_changed.connect(self._on_disturbance_level_changed)
         self.preset_command_panel.send_command.connect(self._send_preset_command)
         self.record_btn.clicked.connect(self._toggle_record)
         self.model_panel.model_combo.currentIndexChanged.connect(self._on_model_context_changed)
 
+        self._on_disturbance_level_changed(
+            self.command_panel.current_disturbance_key(),
+            self.command_panel.current_disturbance_scale(),
+        )
         self._sync_navigation_state()
         self._sync_toolbar_state()
 
@@ -166,8 +186,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.log_dock)
 
-        self.resizeDocks([self.connection_dock, self.model_dock], [370, 360], QtCore.Qt.Horizontal)
-        self.resizeDocks([self.log_dock], [250], QtCore.Qt.Vertical)
+        self.resizeDocks([self.connection_dock, self.model_dock], [450, 320], QtCore.Qt.Horizontal)
+        self.resizeDocks([self.log_dock], [210], QtCore.Qt.Vertical)
 
         self._populate_window_menu()
 
@@ -222,6 +242,11 @@ class MainWindow(QtWidgets.QMainWindow):
         area = QtWidgets.QScrollArea()
         area.setWidgetResizable(True)
         area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        area.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        area.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
+        area.setAlignment(QtCore.Qt.AlignTop)
+        widget.setMinimumWidth(0)
         area.setWidget(widget)
         return area
 
@@ -262,11 +287,77 @@ class MainWindow(QtWidgets.QMainWindow):
         self.record_action = QtWidgets.QAction("开始录制", self)
         self.record_action.triggered.connect(self._toggle_record)
 
+        self.load_settings_action = QtWidgets.QAction("加载设置...", self)
+        self.load_settings_action.triggered.connect(self._load_settings_via_dialog)
+        self.export_settings_action = QtWidgets.QAction("导出设置...", self)
+        self.export_settings_action.triggered.connect(self._export_settings_via_dialog)
+        self.reset_settings_action = QtWidgets.QAction("重置设置", self)
+        self.reset_settings_action.triggered.connect(self._reset_user_settings)
+
         self.follow_view_action = QtWidgets.QAction("视角跟随", self)
         self.follow_view_action.setCheckable(True)
         self.follow_view_action.setChecked(self.model_panel.is_follow_enabled())
         self.follow_view_action.toggled.connect(self.model_panel.set_follow_enabled)
         self.model_panel.follow_cb.toggled.connect(self.follow_view_action.setChecked)
+
+        self.wave_pan_left_action = QtWidgets.QAction("左移视图", self)
+        self.wave_pan_left_action.triggered.connect(lambda: self.plot_panel._pan_x(-0.35))
+        self.wave_pan_right_action = QtWidgets.QAction("右移视图", self)
+        self.wave_pan_right_action.triggered.connect(lambda: self.plot_panel._pan_x(0.35))
+        self.wave_zoom_in_action = QtWidgets.QAction("时间放大", self)
+        self.wave_zoom_in_action.triggered.connect(lambda: self.plot_panel._change_window(0.8))
+        self.wave_zoom_out_action = QtWidgets.QAction("时间缩小", self)
+        self.wave_zoom_out_action.triggered.connect(lambda: self.plot_panel._change_window(1.25))
+        self.wave_back_action = QtWidgets.QAction("后退视图", self)
+        self.wave_back_action.triggered.connect(lambda: self.plot_panel.navigate_view_history(-1))
+        self.wave_forward_action = QtWidgets.QAction("前进视图", self)
+        self.wave_forward_action.triggered.connect(lambda: self.plot_panel.navigate_view_history(1))
+        self.wave_latest_action = QtWidgets.QAction("回到最新", self)
+        self.wave_latest_action.triggered.connect(self.plot_panel.focus_latest)
+        self.wave_focus_action = QtWidgets.QAction("一键聚焦", self)
+        self.wave_focus_action.triggered.connect(self.plot_panel.focus_current_view)
+        self.wave_fit_y_action = QtWidgets.QAction("适配 Y 轴", self)
+        self.wave_fit_y_action.triggered.connect(self.plot_panel.fit_y_to_visible)
+        self.wave_export_image_action = QtWidgets.QAction("导出图片", self)
+        self.wave_export_image_action.triggered.connect(self.plot_panel.export_plot_image)
+        self.wave_export_csv_action = QtWidgets.QAction("导出 CSV", self)
+        self.wave_export_csv_action.triggered.connect(self.plot_panel.export_visible_csv)
+        self.wave_clear_labels_action = QtWidgets.QAction("清空标签", self)
+        self.wave_clear_labels_action.triggered.connect(self.plot_panel.clear_point_markers)
+        self.wave_capture_a_action = QtWidgets.QAction("游标 A 到当前", self)
+        self.wave_capture_a_action.triggered.connect(lambda: self.plot_panel._capture_measure_cursor("a"))
+        self.wave_capture_b_action = QtWidgets.QAction("游标 B 到当前", self)
+        self.wave_capture_b_action.triggered.connect(lambda: self.plot_panel._capture_measure_cursor("b"))
+        self.wave_reset_measure_action = QtWidgets.QAction("重置测量游标", self)
+        self.wave_reset_measure_action.triggered.connect(self.plot_panel._reset_measurement_lines)
+
+        self.wave_cursor_action = QtWidgets.QAction("十字光标", self)
+        self.wave_cursor_action.setCheckable(True)
+        self.wave_cursor_action.setChecked(self.plot_panel.is_cursor_enabled())
+        self.wave_cursor_action.toggled.connect(self.plot_panel.set_cursor_enabled)
+        self.plot_panel.cursor_cb.toggled.connect(self.wave_cursor_action.setChecked)
+
+        self.wave_annotation_action = QtWidgets.QAction("点击标记", self)
+        self.wave_annotation_action.setCheckable(True)
+        self.wave_annotation_action.setChecked(self.plot_panel.is_annotation_enabled())
+        self.wave_annotation_action.toggled.connect(self.plot_panel.set_annotation_enabled)
+        self.plot_panel.annotation_cb.toggled.connect(self.wave_annotation_action.setChecked)
+
+        self.wave_measurement_action = QtWidgets.QAction("双游标测量", self)
+        self.wave_measurement_action.setCheckable(True)
+        self.wave_measurement_action.setChecked(self.plot_panel.is_measurement_enabled())
+        self.wave_measurement_action.toggled.connect(self.plot_panel.set_measurement_enabled)
+        self.plot_panel.measurement_cb.toggled.connect(self.wave_measurement_action.setChecked)
+
+        self.wave_mouse_group = QtWidgets.QActionGroup(self)
+        self.wave_mouse_pan_action = QtWidgets.QAction("平移拖拽", self)
+        self.wave_mouse_pan_action.setCheckable(True)
+        self.wave_mouse_rect_action = QtWidgets.QAction("框选缩放", self)
+        self.wave_mouse_rect_action.setCheckable(True)
+        self.wave_mouse_group.addAction(self.wave_mouse_pan_action)
+        self.wave_mouse_group.addAction(self.wave_mouse_rect_action)
+        self.wave_mouse_pan_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("pan"))
+        self.wave_mouse_rect_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("rect"))
 
         menu_bar = self.menuBar()
         menu_bar.setNativeMenuBar(False)
@@ -276,6 +367,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.file_menu.addSeparator()
         self.exit_action = self.file_menu.addAction("退出")
         self.exit_action.triggered.connect(self.close)
+
+        self.settings_menu = menu_bar.addMenu("设置")
+        self.settings_menu.addAction(self.load_settings_action)
+        self.settings_menu.addAction(self.export_settings_action)
+        self.settings_menu.addSeparator()
+        self.settings_menu.addAction(self.reset_settings_action)
 
         self.model_menu = menu_bar.addMenu("模型")
         self.model_selector_menu = self.model_menu.addMenu("切换模型")
@@ -294,6 +391,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.scene_selector_menu = self.scene_menu.addMenu("切换场景")
         self.scene_menu.addSeparator()
         self.scene_menu.addAction(self.follow_view_action)
+
+        self.wave_menu = menu_bar.addMenu("波形")
+        self._populate_wave_menu(self.wave_menu)
 
         self.view_menu = menu_bar.addMenu("视图")
         self.view_menu.addAction(self.model_panel.reset_view_action)
@@ -322,6 +422,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.scene_selector_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
         self.scene_selector_btn.setMenu(self.scene_selector_menu)
 
+        self.wave_menu_btn = QtWidgets.QToolButton()
+        self.wave_menu_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.wave_menu_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
+        self.wave_menu_btn.setText("波形")
+        self.wave_menu_btn.setMenu(self.wave_menu)
+
         self.workbench_toolbar.addAction(self.refresh_ports_action)
         self.workbench_toolbar.addAction(self.connect_serial_action)
         self.workbench_toolbar.addAction(self.disconnect_serial_action)
@@ -333,6 +439,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workbench_toolbar.addSeparator()
         self.workbench_toolbar.addWidget(self.model_selector_btn)
         self.workbench_toolbar.addWidget(self.scene_selector_btn)
+        self.workbench_toolbar.addWidget(self.wave_menu_btn)
         self.workbench_toolbar.addAction(self.follow_view_action)
         self.workbench_toolbar.addAction(self.model_panel.reset_view_action)
         self.workbench_toolbar.addAction(self.model_panel.clear_trail_action)
@@ -349,6 +456,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.model_panel.follow_cb.toggled.connect(self._update_3d_status_summary)
         self.model_panel.import_model_action.triggered.connect(self._schedule_navigation_refresh)
         self.model_panel.use_default_action.triggered.connect(self._schedule_navigation_refresh)
+        self.plot_panel.mouse_mode_combo.currentIndexChanged.connect(self._sync_wave_actions)
+        self.plot_panel.measure_channel_combo.currentIndexChanged.connect(self._sync_wave_actions)
+        self.plot_panel.measurement_cb.toggled.connect(self._sync_wave_actions)
+        self.plot_panel.annotation_cb.toggled.connect(self._sync_wave_actions)
+        self.plot_panel.cursor_cb.toggled.connect(self._sync_wave_actions)
+        self._sync_wave_actions()
 
     def _populate_window_menu(self):
         self.show_views_menu.clear()
@@ -367,6 +480,72 @@ class MainWindow(QtWidgets.QMainWindow):
         toolbar_action = self.workbench_toolbar.toggleViewAction()
         toolbar_action.setText("工作台工具栏")
         self.window_menu.addAction(toolbar_action)
+
+    def _populate_wave_menu(self, menu: QtWidgets.QMenu):
+        menu.clear()
+
+        nav_menu = menu.addMenu("导航")
+        nav_menu.addAction(self.wave_pan_left_action)
+        nav_menu.addAction(self.wave_pan_right_action)
+        nav_menu.addSeparator()
+        nav_menu.addAction(self.wave_zoom_in_action)
+        nav_menu.addAction(self.wave_zoom_out_action)
+        nav_menu.addSeparator()
+        nav_menu.addAction(self.wave_back_action)
+        nav_menu.addAction(self.wave_forward_action)
+        nav_menu.addSeparator()
+        nav_menu.addAction(self.wave_latest_action)
+        nav_menu.addAction(self.wave_focus_action)
+        nav_menu.addAction(self.wave_fit_y_action)
+
+        interact_menu = menu.addMenu("交互")
+        mouse_menu = interact_menu.addMenu("鼠标模式")
+        mouse_menu.addAction(self.wave_mouse_pan_action)
+        mouse_menu.addAction(self.wave_mouse_rect_action)
+        interact_menu.addAction(self.wave_cursor_action)
+        interact_menu.addAction(self.wave_annotation_action)
+        interact_menu.addAction(self.wave_clear_labels_action)
+
+        measure_menu = menu.addMenu("测量")
+        measure_menu.addAction(self.wave_measurement_action)
+        self.wave_measure_channel_menu = measure_menu.addMenu("测量通道")
+        measure_menu.addSeparator()
+        measure_menu.addAction(self.wave_capture_a_action)
+        measure_menu.addAction(self.wave_capture_b_action)
+        measure_menu.addAction(self.wave_reset_measure_action)
+
+        export_menu = menu.addMenu("导出")
+        export_menu.addAction(self.wave_export_image_action)
+        export_menu.addAction(self.wave_export_csv_action)
+
+        self._rebuild_wave_measure_channel_menu()
+
+    def _rebuild_wave_measure_channel_menu(self):
+        self.wave_measure_channel_menu.clear()
+        self._wave_measure_group = QtWidgets.QActionGroup(self.wave_measure_channel_menu)
+        self._wave_measure_group.setExclusive(True)
+        current_channel = self.plot_panel.current_measure_channel()
+        for label, channel_name in self.plot_panel.measurement_channel_items():
+            action = self.wave_measure_channel_menu.addAction(label)
+            action.setCheckable(True)
+            action.setData(channel_name)
+            action.setChecked(channel_name == current_channel)
+            self._wave_measure_group.addAction(action)
+        self._wave_measure_group.triggered.connect(self._on_wave_measure_channel_triggered)
+
+    def _on_wave_measure_channel_triggered(self, action: QtWidgets.QAction):
+        channel_name = action.data()
+        if channel_name:
+            self.plot_panel.set_measure_channel(channel_name)
+
+    def _sync_wave_actions(self):
+        mode_key = self.plot_panel.current_mouse_mode()
+        self.wave_mouse_pan_action.setChecked(mode_key == "pan")
+        self.wave_mouse_rect_action.setChecked(mode_key == "rect")
+        self.wave_capture_a_action.setEnabled(self.plot_panel.is_measurement_enabled())
+        self.wave_capture_b_action.setEnabled(self.plot_panel.is_measurement_enabled())
+        self.wave_reset_measure_action.setEnabled(self.plot_panel.is_measurement_enabled())
+        self._rebuild_wave_measure_channel_menu()
 
     def _apply_workbench_style(self):
         font = QtGui.QFont("Microsoft YaHei UI", 9)
@@ -413,6 +592,7 @@ class MainWindow(QtWidgets.QMainWindow):
         )
 
     def _capture_default_layout(self):
+        self._default_window_geometry = self.saveGeometry()
         self._default_window_state = self.saveState()
 
     def _restore_default_layout(self):
@@ -428,6 +608,127 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connection_dock.raise_()
         self.model_dock.raise_()
         self.statusBar().showMessage("已恢复默认工作台布局", 2500)
+
+    def _serialize_byte_array(self, value: QtCore.QByteArray):
+        return bytes(value.toBase64()).decode("ascii")
+
+    def _deserialize_byte_array(self, value: str):
+        if not value:
+            return None
+        try:
+            return QtCore.QByteArray.fromBase64(value.encode("ascii"))
+        except Exception:
+            return None
+
+    def _collect_settings_payload(self) -> dict:
+        return {
+            "version": 1,
+            "window": {
+                "geometry": self._serialize_byte_array(self.saveGeometry()),
+                "state": self._serialize_byte_array(self.saveState()),
+            },
+            "serial_panel": self.serial_panel.get_state(),
+            "command_panel": self.command_panel.get_state(),
+            "preset_panel": self.preset_command_panel.get_state(),
+            "plot_panel": self.plot_panel.get_state(),
+            "model_panel": self.model_panel.get_state(),
+        }
+
+    def _apply_settings_payload(self, payload: dict):
+        if not isinstance(payload, dict):
+            return
+
+        self.serial_panel.apply_state(payload.get("serial_panel", {}))
+        self.command_panel.apply_state(payload.get("command_panel", {}))
+        self.preset_command_panel.apply_state(payload.get("preset_panel", {}))
+        self.plot_panel.apply_state(payload.get("plot_panel", {}))
+        self.model_panel.apply_state(payload.get("model_panel", {}))
+
+        window_state = payload.get("window", {})
+        if isinstance(window_state, dict):
+            geometry = self._deserialize_byte_array(str(window_state.get("geometry", "")))
+            state = self._deserialize_byte_array(str(window_state.get("state", "")))
+            if geometry is not None:
+                self.restoreGeometry(geometry)
+            if state is not None:
+                self.restoreState(state)
+
+        self._sync_wave_actions()
+        self._sync_navigation_state()
+        self._sync_toolbar_state()
+        self._update_3d_status_summary()
+
+    def _write_settings_file(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self._collect_settings_payload(), ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _read_settings_file(self, path: Path):
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _save_persistent_settings(self):
+        try:
+            self._write_settings_file(USER_SETTINGS_PATH)
+        except Exception:
+            pass
+
+    def _load_persistent_settings(self):
+        if not USER_SETTINGS_PATH.exists():
+            return
+        try:
+            self._apply_settings_payload(self._read_settings_file(USER_SETTINGS_PATH))
+        except Exception:
+            self.statusBar().showMessage("已忽略损坏的本地设置文件", 3000)
+
+    def _export_settings_via_dialog(self):
+        default_name = f"ui_settings_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        target, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self,
+            "导出设置",
+            str(SOFTWARE_ROOT / default_name),
+            "JSON 文件 (*.json)",
+        )
+        if not target:
+            return
+        try:
+            self._write_settings_file(Path(target))
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "导出失败", f"无法导出设置文件：\n{exc}")
+            return
+        self.statusBar().showMessage(f"设置已导出到 {target}", 3000)
+
+    def _load_settings_via_dialog(self):
+        source, _ = QtWidgets.QFileDialog.getOpenFileName(
+            self,
+            "加载设置",
+            str(SOFTWARE_ROOT),
+            "JSON 文件 (*.json)",
+        )
+        if not source:
+            return
+        try:
+            payload = self._read_settings_file(Path(source))
+            self._apply_settings_payload(payload)
+        except Exception as exc:
+            QtWidgets.QMessageBox.warning(self, "加载失败", f"无法加载设置文件：\n{exc}")
+            return
+        self._save_persistent_settings()
+        self.statusBar().showMessage(f"已加载设置: {source}", 3000)
+
+    def _reset_user_settings(self):
+        self.serial_panel.reset_to_defaults()
+        self.command_panel.reset_to_defaults()
+        self.preset_command_panel.reset_to_defaults()
+        self.plot_panel.reset_to_defaults()
+        self.model_panel.reset_to_defaults()
+        if self._default_window_geometry is not None:
+            self.restoreGeometry(self._default_window_geometry)
+        self._restore_default_layout()
+        self._sync_wave_actions()
+        self._sync_navigation_state()
+        self._sync_toolbar_state()
+        self._update_3d_status_summary()
+        self._save_persistent_settings()
+        self.statusBar().showMessage("已重置为默认设置", 3000)
 
     def _setup_worker(self):
         self.worker_thread = QtCore.QThread(self)
@@ -519,6 +820,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.connect_serial_action.setEnabled(self.serial_panel.connect_btn.isEnabled())
         self.disconnect_serial_action.setEnabled(self.serial_panel.disconnect_btn.isEnabled())
         self.record_action.setText("停止录制" if self.recorder.active else "开始录制")
+
+    def _on_disturbance_level_changed(self, level_key: str, scale: float):
+        self._disturbance_level_key = level_key
+        self._disturbance_scale = float(scale)
+        for simulator in self._simulators.values():
+            simulator.set_disturbance_scale(self._disturbance_scale)
+        self.status_panel.set_disturbance_level(DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label()))
+        self.statusBar().showMessage(
+            f"环境扰动等级已切换为 {DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label())}",
+            2500,
+        )
 
     def _connect_selected_port(self):
         self.open_serial_signal.emit(self.serial_panel.port_combo.currentText(), int(self.serial_panel.baud_combo.currentText()))
@@ -621,6 +933,9 @@ class MainWindow(QtWidgets.QMainWindow):
         current_feedback = self._feedback_by_model[model_type]
         self._latest_feedback = current_feedback
         self.status_panel.set_model_context(model_type)
+        self.status_panel.set_disturbance_level(
+            DISTURBANCE_LEVEL_TEXT.get(self._disturbance_level_key, self.command_panel.current_disturbance_label())
+        )
         self.status_panel.update_vertical_state(
             current_feedback.depth,
             current_feedback.depth_rate,
@@ -630,6 +945,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_panel.clear_model_series()
         self.model_panel.update_depth(current_feedback.depth)
         self._update_3d_status_summary()
+        self._sync_wave_actions()
         self._schedule_navigation_refresh()
         self.statusBar().showMessage(f"已切换到 {MODEL_NAME.get(model_type, model_type)}", 2500)
 
@@ -707,6 +1023,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     "sim_vertical": feedback.depth,
                     "sim_vertical_rate": feedback.depth_rate,
                     "sim_disturbance": feedback.disturbance,
+                    "sim_disturbance_level": self._disturbance_level_key,
+                    "sim_disturbance_scale": self._disturbance_scale,
                 }
             )
             self.recorder.write_row(row)

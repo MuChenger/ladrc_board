@@ -31,6 +31,7 @@ class StatusPanel(QtWidgets.QWidget):
         self.vertical_val = self._value_label("0.000")
         self.vertical_rate_val = self._value_label("0.000")
         self.disturbance_val = self._value_label("0.000")
+        self.disturbance_level_val = self._value_label("中")
 
         self.rx_val = self._value_label("0")
         self.tx_val = self._value_label("0")
@@ -42,6 +43,7 @@ class StatusPanel(QtWidgets.QWidget):
         self.vertical_key_label = self._key_label("仿真深度")
         self.vertical_rate_key_label = self._key_label("深度变化率")
         self.disturbance_key_label = self._key_label("环境扰动")
+        self.disturbance_level_key_label = self._key_label("扰动等级")
 
         self._add_rows(
             control_grid,
@@ -59,6 +61,7 @@ class StatusPanel(QtWidgets.QWidget):
                 (self.vertical_key_label, self.vertical_val),
                 (self.vertical_rate_key_label, self.vertical_rate_val),
                 (self.disturbance_key_label, self.disturbance_val),
+                (self.disturbance_level_key_label, self.disturbance_level_val),
             ],
         )
         self._add_rows(
@@ -125,6 +128,9 @@ class StatusPanel(QtWidgets.QWidget):
         self.vertical_val.setText(f"{vertical:.3f}")
         self.vertical_rate_val.setText(f"{vertical_rate:.3f}")
         self.disturbance_val.setText(f"{disturbance:.3f}")
+
+    def set_disturbance_level(self, label: str):
+        self.disturbance_level_val.setText(label)
 
     def update_comm(self, rx_frames: int, tx_frames: int, parse_errors: int, latency_ms: int):
         self.rx_val.setText(str(rx_frames))
