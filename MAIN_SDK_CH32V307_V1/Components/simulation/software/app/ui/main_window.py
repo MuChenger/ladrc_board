@@ -808,6 +808,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self._disturbance_level_key = "medium"
         self._disturbance_scale = 1.0
         self._simulation_running = False
+        self._simulate_device_upload = False
+        self._simulated_upload_integral = 0.0
+        self._simulated_upload_yaw = 0.0
+        self._simulated_upload_rx_frames = 0
         self._waveform_window = None
         self._waveform_window_mode = None
         self._console_dock_restoring = False
@@ -927,6 +931,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.command_panel.ref_changed.connect(self._on_reference_changed)
         self.command_panel.disturbance_level_changed.connect(self._on_disturbance_level_changed)
         self.command_panel.sim_period_changed.connect(self._on_sim_period_changed)
+        self.command_panel.simulated_upload_changed.connect(self._on_simulated_upload_changed)
         self.preset_command_panel.send_command.connect(self._send_preset_command)
         self.record_btn.clicked.connect(self._toggle_record)
         self.model_panel.model_combo.currentIndexChanged.connect(self._on_model_context_changed)
@@ -936,6 +941,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.command_panel.current_disturbance_scale(),
         )
         self._sync_local_control_cache()
+        self._on_simulated_upload_changed(self.command_panel.is_simulated_upload_enabled())
         self._sync_navigation_state()
         self._sync_toolbar_state()
 
@@ -2316,6 +2322,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.sim_timer.start()
         else:
             self.sim_timer.stop()
+            self._reset_simulated_upload_state()
         self._refresh_control_status()
         self._sync_toolbar_state()
         self.statusBar().showMessage("仿真已启动" if running else "仿真已停止", 2500)
@@ -2350,6 +2357,9 @@ class MainWindow(QtWidgets.QMainWindow):
             del blocker
             self._latest_telemetry.ref = ref_value
             self._refresh_control_status()
+            return
+        if normalized == "GET STATUS" and self._is_simulated_upload_active():
+            self._emit_simulated_status_snapshot()
 
     def _on_algorithm_selected(self, algo_name: str):
         self._latest_telemetry.algo_id = self._algo_id_from_name(algo_name)
@@ -2438,6 +2448,9 @@ class MainWindow(QtWidgets.QMainWindow):
     def _log_inbound_telemetry(self, telemetry: Telemetry):
         self.log_panel.append_line(f"[下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}")
 
+    def _log_simulated_inbound_telemetry(self, telemetry: Telemetry):
+        self.log_panel.append_line(f"[模拟下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}")
+
     def _send_toolbar_command(self, command: str):
         self._apply_local_command_side_effects(command)
         self._log_outbound_command(command)
@@ -2518,6 +2531,11 @@ class MainWindow(QtWidgets.QMainWindow):
         state = "已连接" if connected else "已断开"
         suffix = f" {desc}" if desc else ""
         self.log_panel.append_line(f"[串口] {state}{suffix}")
+        if self._simulate_device_upload:
+            if connected:
+                self.log_panel.append_line("[模拟下位机] 已检测到真实串口连接，模拟上报已自动暂停。")
+            else:
+                self.log_panel.append_line("[模拟下位机] 当前未连接串口，可使用本地模拟上报体验软件。")
         self.statusBar().showMessage(f"串口状态: {state}{suffix}", 3000)
 
     def _on_line(self, line: str):
@@ -2541,6 +2559,7 @@ class MainWindow(QtWidgets.QMainWindow):
         model_type = self._current_model_type()
         current_feedback = self._feedback_by_model[model_type]
         self._latest_feedback = current_feedback
+        self._reset_simulated_upload_state()
         self.status_panel.set_model_context(model_type)
         self.status_panel.set_disturbance_level(
             DISTURBANCE_LEVEL_TEXT.get(self._disturbance_level_key, self.command_panel.current_disturbance_label())
@@ -2558,7 +2577,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._schedule_navigation_refresh()
         self.statusBar().showMessage(f"已切换到 {MODEL_NAME.get(model_type, model_type)}", 2500)
 
-    def _on_telemetry(self, telemetry: Telemetry):
+    def _apply_telemetry(self, telemetry: Telemetry, simulated: bool = False):
         previous_feedback = self._latest_telemetry.feedback
         feedback_missing = bool(getattr(telemetry, "extra", {}).pop("_feedback_missing", 0.0))
         if feedback_missing:
@@ -2569,7 +2588,14 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 self._legacy_binary_feedback_warned = True
         self._latest_telemetry = telemetry
-        self._log_inbound_telemetry(telemetry)
+        if simulated:
+            self._simulated_upload_rx_frames += 1
+            self._last_rx_ms = int(time.time() * 1000)
+            self.status_panel.update_comm(self._simulated_upload_rx_frames, 0, 0, 0)
+            self.status_panel.set_timeout(False)
+            self._log_simulated_inbound_telemetry(telemetry)
+        else:
+            self._log_inbound_telemetry(telemetry)
 
         now_s = time.monotonic() - self._start_monotonic
         algo_name = ALGO_NAME.get(telemetry.algo_id, f"ALG_{telemetry.algo_id}")
@@ -2601,6 +2627,105 @@ class MainWindow(QtWidgets.QMainWindow):
             telemetry.u_cmd,
         )
 
+    def _on_telemetry(self, telemetry: Telemetry):
+        self._apply_telemetry(telemetry, simulated=False)
+
+    def _reset_simulated_upload_state(self):
+        self._simulated_upload_integral = 0.0
+        self._simulated_upload_yaw = 0.0
+        self._simulated_upload_rx_frames = 0
+
+    def _is_simulated_upload_active(self) -> bool:
+        return bool(self._simulate_device_upload and not self._is_serial_connected())
+
+    def _on_simulated_upload_changed(self, enabled: bool):
+        enabled = bool(enabled)
+        previous = self._simulate_device_upload
+        self._simulate_device_upload = enabled
+        if previous == enabled:
+            return
+        self._reset_simulated_upload_state()
+        if self._simulate_device_upload:
+            self.log_panel.append_line("[模拟下位机] 已启用模拟上报模式，未连接串口时将本地生成遥测。")
+            self.statusBar().showMessage("已启用模拟下位机上传模式，可在不连接串口时体验软件。", 3500)
+        else:
+            if not self._is_serial_connected():
+                self._last_rx_ms = 0
+                self.status_panel.update_comm(0, 0, 0, 0)
+                self.status_panel.set_timeout(False)
+            self.log_panel.append_line("[模拟下位机] 已关闭模拟上报模式。")
+            self.statusBar().showMessage("已关闭模拟下位机上传模式。", 2500)
+
+    def _simulated_control_gains(self, model_type: str, algo_name: str):
+        pid_gains = {
+            "rov": (1.15, 0.14, 0.62),
+            "aircraft": (1.45, 0.10, 0.78),
+            "generic": (1.05, 0.12, 0.50),
+        }
+        ladrc_gains = {
+            "rov": (1.35, 0.65, 0.18),
+            "aircraft": (1.55, 0.82, 0.12),
+            "generic": (1.20, 0.58, 0.15),
+        }
+        if algo_name == "LADRC":
+            return ladrc_gains.get(model_type, ladrc_gains["rov"])
+        return pid_gains.get(model_type, pid_gains["rov"])
+
+    def _generate_simulated_pose(self, model_type: str, u_cmd: float, feedback: SimFeedback, now_s: float, dt: float):
+        yaw_bias = {"rov": 4.0, "aircraft": 10.0, "generic": 6.0}.get(model_type, 4.0)
+        yaw_gain = {"rov": 12.0, "aircraft": 24.0, "generic": 16.0}.get(model_type, 12.0)
+        self._simulated_upload_yaw = (self._simulated_upload_yaw + (yaw_bias + yaw_gain * u_cmd) * dt) % 360.0
+
+        if model_type == "aircraft":
+            roll = max(-28.0, min(28.0, math.sin(now_s * 0.92) * 6.0 + u_cmd * 5.5))
+            pitch = max(-20.0, min(20.0, math.cos(now_s * 0.66) * 4.0 + feedback.depth_rate * 42.0))
+        elif model_type == "generic":
+            roll = max(-16.0, min(16.0, math.sin(now_s * 0.75) * 4.0 + u_cmd * 3.2))
+            pitch = max(-12.0, min(12.0, math.cos(now_s * 0.58) * 3.0 + feedback.depth_rate * 28.0))
+        else:
+            roll = max(-12.0, min(12.0, math.sin(now_s * 0.70) * 3.0 + u_cmd * 2.4))
+            pitch = max(-10.0, min(10.0, math.cos(now_s * 0.54) * 2.8 + feedback.depth_rate * 22.0))
+        return roll, pitch, self._simulated_upload_yaw
+
+    def _generate_simulated_upload_telemetry(self, dt: float) -> Telemetry:
+        model_type = self._current_model_type()
+        feedback = self._current_feedback()
+        now_s = time.monotonic() - self._start_monotonic
+        now_ms = int(time.time() * 1000)
+        algo_name = str(self.command_panel.algo_combo.currentData() or "PID").strip().upper()
+        ref = float(self.command_panel.ref_spin.value())
+        error = ref - float(feedback.depth)
+
+        if algo_name == "OPEN_LOOP":
+            u_cmd = max(-3.0, min(3.0, ref if abs(ref) > 1e-6 else math.sin(now_s * 0.65) * 1.2))
+        else:
+            g1, g2, g3 = self._simulated_control_gains(model_type, algo_name)
+            self._simulated_upload_integral += error * dt
+            self._simulated_upload_integral = max(-6.0, min(6.0, self._simulated_upload_integral))
+            if algo_name == "LADRC":
+                u_cmd = g1 * error - g2 * float(feedback.depth_rate) - g3 * float(feedback.disturbance)
+            else:
+                u_cmd = g1 * error + g3 * self._simulated_upload_integral - g2 * float(feedback.depth_rate)
+            u_cmd = max(-3.0, min(3.0, u_cmd))
+
+        roll, pitch, yaw = self._generate_simulated_pose(model_type, u_cmd, feedback, now_s, dt)
+        return Telemetry(
+            timestamp_ms=now_ms,
+            roll=roll,
+            pitch=pitch,
+            yaw=yaw,
+            u_cmd=u_cmd,
+            ref=ref,
+            feedback=float(feedback.depth),
+            algo_id=self._algo_id_from_name(algo_name),
+            run_state=1 if self._simulation_running else 0,
+        )
+
+    def _emit_simulated_status_snapshot(self):
+        telemetry = self._generate_simulated_upload_telemetry(max(1e-3, self._sim_period_ms / 1000.0))
+        telemetry.run_state = 1 if self._simulation_running else 0
+        self._apply_telemetry(telemetry, simulated=True)
+
     def _on_sim_tick(self):
         if not self._simulation_running:
             return
@@ -2609,6 +2734,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_sim_time = now
 
         model_type = self._current_model_type()
+        if self._is_simulated_upload_active():
+            telemetry = self._generate_simulated_upload_telemetry(dt)
+            self._apply_telemetry(telemetry, simulated=True)
         raw_feedback = self._simulators[model_type].step(dt, self._latest_telemetry.u_cmd)
         feedback = self._normalize_feedback(model_type, raw_feedback)
         self._feedback_by_model[model_type] = feedback

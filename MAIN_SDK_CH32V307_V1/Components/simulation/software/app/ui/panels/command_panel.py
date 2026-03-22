@@ -22,6 +22,7 @@ class CommandPanel(QtWidgets.QGroupBox):
     ref_changed = QtCore.pyqtSignal(float)
     disturbance_level_changed = QtCore.pyqtSignal(str, float)
     sim_period_changed = QtCore.pyqtSignal(int)
+    simulated_upload_changed = QtCore.pyqtSignal(bool)
     console_message = QtCore.pyqtSignal(str)
 
     def __init__(self, parent=None):
@@ -94,6 +95,13 @@ class CommandPanel(QtWidgets.QGroupBox):
         sim_row.addStretch(1)
         self.set_sim_period_ms(10, emit_signal=False)
 
+        upload_row = QtWidgets.QHBoxLayout()
+        upload_row.setSpacing(8)
+        self.simulated_upload_cb = QtWidgets.QCheckBox("模拟下位机上传（免串口体验）")
+        self.simulated_upload_cb.setToolTip("启用后，在未连接串口时由上位机本地生成下位机遥测，便于直接体验波形、状态与 3D 联动。")
+        upload_row.addWidget(self.simulated_upload_cb)
+        upload_row.addStretch(1)
+
         action_row = QtWidgets.QHBoxLayout()
         action_row.setSpacing(8)
         self.run_btn = QtWidgets.QPushButton("启动")
@@ -123,6 +131,7 @@ class CommandPanel(QtWidgets.QGroupBox):
         layout.addLayout(disturbance_row)
         layout.addWidget(sim_caption)
         layout.addLayout(sim_row)
+        layout.addLayout(upload_row)
         layout.addLayout(action_row)
         layout.addWidget(command_caption)
         layout.addWidget(self.command_edit)
@@ -137,6 +146,7 @@ class CommandPanel(QtWidgets.QGroupBox):
         self.command_edit.returnPressed.connect(self._send_from_edit)
         self.disturbance_combo.currentIndexChanged.connect(self._emit_disturbance_level)
         self.sim_period_spin.valueChanged.connect(self._on_sim_period_changed)
+        self.simulated_upload_cb.toggled.connect(self.simulated_upload_changed.emit)
 
     def _apply_size_hints(self):
         metrics = self.fontMetrics()
@@ -197,6 +207,9 @@ class CommandPanel(QtWidgets.QGroupBox):
     def current_sim_period_ms(self) -> int:
         return int(self.sim_period_spin.value())
 
+    def is_simulated_upload_enabled(self) -> bool:
+        return self.simulated_upload_cb.isChecked()
+
     def set_disturbance_level(self, level_key: str):
         for index in range(self.disturbance_combo.count()):
             data = self.disturbance_combo.itemData(index)
@@ -213,6 +226,13 @@ class CommandPanel(QtWidgets.QGroupBox):
         if emit_signal:
             self.sim_period_changed.emit(period_ms)
 
+    def set_simulated_upload_enabled(self, enabled: bool, emit_signal: bool = True):
+        blocker = QtCore.QSignalBlocker(self.simulated_upload_cb)
+        self.simulated_upload_cb.setChecked(bool(enabled))
+        del blocker
+        if emit_signal:
+            self.simulated_upload_changed.emit(bool(enabled))
+
     def _refresh_sim_rate_label(self, period_ms: Optional[int] = None):
         period_ms = int(period_ms if period_ms is not None else self.sim_period_spin.value())
         hz = 1000.0 / max(1, period_ms)
@@ -225,6 +245,7 @@ class CommandPanel(QtWidgets.QGroupBox):
             "command_text": self.command_edit.text(),
             "disturbance_level": self.current_disturbance_key(),
             "sim_period_ms": self.current_sim_period_ms(),
+            "simulated_upload": self.is_simulated_upload_enabled(),
         }
 
     def apply_state(self, state: dict):
@@ -249,6 +270,8 @@ class CommandPanel(QtWidgets.QGroupBox):
                 self.set_sim_period_ms(int(state.get("sim_period_ms", 10)), emit_signal=False)
             except (TypeError, ValueError):
                 self.set_sim_period_ms(10, emit_signal=False)
+        if "simulated_upload" in state:
+            self.set_simulated_upload_enabled(bool(state.get("simulated_upload")), emit_signal=True)
 
     def reset_to_defaults(self):
         self.algo_combo.setCurrentIndex(0)
@@ -256,3 +279,4 @@ class CommandPanel(QtWidgets.QGroupBox):
         self.command_edit.clear()
         self.set_disturbance_level("medium")
         self.set_sim_period_ms(10)
+        self.set_simulated_upload_enabled(False)
