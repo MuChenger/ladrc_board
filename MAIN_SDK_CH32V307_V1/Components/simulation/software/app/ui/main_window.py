@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import sys
 import time
 from pathlib import Path
@@ -24,10 +25,8 @@ from .panels.status_panel import StatusPanel
 ALGO_NAME = {0: "PID", 1: "LADRC", 2: "开环"}
 MODEL_NAME = {"rov": "水下机器人", "aircraft": "飞行器", "generic": "通用载体"}
 SOFTWARE_ROOT = Path(__file__).resolve().parents[2]
-USER_SETTINGS_PATH = SOFTWARE_ROOT / "user_settings.json"
 APP_ICON_PATH = SOFTWARE_ROOT / "assets" / "icons" / "app_icon.svg"
 README_PATH = SOFTWARE_ROOT / "README.md"
-REQUIREMENTS_PATH = SOFTWARE_ROOT / "requirements.md"
 DISTURBANCE_LEVEL_TEXT = {
     "off": "关闭",
     "low": "低",
@@ -37,6 +36,24 @@ DISTURBANCE_LEVEL_TEXT = {
 }
 DEFAULT_THEME_KEY = "ocean"
 THEME_ORDER = ["ocean", "light", "dark"]
+
+
+def _default_user_settings_dir() -> Path:
+    if sys.platform.startswith("win"):
+        base = os.environ.get("APPDATA") or os.environ.get("LOCALAPPDATA")
+        if base:
+            return Path(base) / "EmbeddedNewStart" / "ControlAlgorithmSimulator"
+        return Path.home() / "AppData" / "Roaming" / "EmbeddedNewStart" / "ControlAlgorithmSimulator"
+
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config_home:
+        return Path(xdg_config_home) / "embedded-newstart" / "control-algorithm-simulator"
+    return Path.home() / ".config" / "embedded-newstart" / "control-algorithm-simulator"
+
+
+USER_SETTINGS_DIR = _default_user_settings_dir()
+USER_SETTINGS_PATH = USER_SETTINGS_DIR / "user_settings.json"
+LEGACY_USER_SETTINGS_PATH = SOFTWARE_ROOT / "user_settings.json"
 THEME_PRESETS = {
     "light": {
         "label": "浅色专业",
@@ -585,7 +602,6 @@ class StartupSplash(QtWidgets.QWidget):
 class WelcomeDialog(QtWidgets.QDialog):
     show_on_startup_changed = QtCore.pyqtSignal(bool)
     open_readme_requested = QtCore.pyqtSignal()
-    open_requirements_requested = QtCore.pyqtSignal()
     open_device_requested = QtCore.pyqtSignal()
     open_control_requested = QtCore.pyqtSignal()
     open_wave_requested = QtCore.pyqtSignal()
@@ -742,11 +758,9 @@ class WelcomeDialog(QtWidgets.QDialog):
         layout.addWidget(self.show_on_startup_cb)
 
         buttons = QtWidgets.QDialogButtonBox()
-        self.readme_btn = buttons.addButton("使用说明", QtWidgets.QDialogButtonBox.ActionRole)
-        self.requirements_btn = buttons.addButton("需求文档", QtWidgets.QDialogButtonBox.ActionRole)
+        self.readme_btn = buttons.addButton("EXE 使用说明", QtWidgets.QDialogButtonBox.ActionRole)
         self.start_btn = buttons.addButton("开始使用", QtWidgets.QDialogButtonBox.AcceptRole)
         self.readme_btn.clicked.connect(self.open_readme_requested.emit)
-        self.requirements_btn.clicked.connect(self.open_requirements_requested.emit)
         self.device_btn.clicked.connect(self.open_device_requested.emit)
         self.control_btn.clicked.connect(self.open_control_requested.emit)
         self.wave_btn.clicked.connect(self.open_wave_requested.emit)
@@ -804,6 +818,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._left_sidebar_target_width = 0
         self._show_welcome_on_startup = True
         self._welcome_seen = False
+        self._settings_save_error = ""
         self._welcome_dialog = None
 
         self.recorder = CsvRecorder()
@@ -1055,19 +1070,12 @@ class MainWindow(QtWidgets.QMainWindow):
         if not ok:
             QtWidgets.QMessageBox.warning(self, "打开失败", f"无法打开{title}：\n{path}")
 
-    def _copy_project_path(self):
-        QtWidgets.QApplication.clipboard().setText(str(SOFTWARE_ROOT))
-        self.statusBar().showMessage(f"项目路径已复制: {SOFTWARE_ROOT}", 3000)
-
     def _ensure_welcome_dialog(self):
         if self._welcome_dialog is None:
             self._welcome_dialog = WelcomeDialog(self.cfg, self.windowIcon(), self)
             self._welcome_dialog.show_on_startup_changed.connect(self._set_show_welcome_on_startup)
             self._welcome_dialog.open_readme_requested.connect(
-                lambda: self._open_local_document(README_PATH, "使用说明")
-            )
-            self._welcome_dialog.open_requirements_requested.connect(
-                lambda: self._open_local_document(REQUIREMENTS_PATH, "需求规格说明")
+                lambda: self._open_local_document(README_PATH, "EXE 使用说明")
             )
             self._welcome_dialog.open_device_requested.connect(lambda: self._focus_dock(self.connection_dock))
             self._welcome_dialog.open_control_requested.connect(lambda: self._focus_dock(self.control_dock))
@@ -1168,22 +1176,18 @@ class MainWindow(QtWidgets.QMainWindow):
         info_layout.addRow("作者", QtWidgets.QLabel(self.cfg.app_author))
         info_layout.addRow("软件定位", QtWidgets.QLabel(self.cfg.app_tagline))
         info_layout.addRow("核心能力", QtWidgets.QLabel("串口联调、波形分析、3D 仿真、模型导入、主题切换"))
-        info_layout.addRow("项目目录", QtWidgets.QLabel(str(SOFTWARE_ROOT)))
+        info_layout.addRow("使用方式", QtWidgets.QLabel("打开 EXE 后按欢迎页或软件内说明完成连接、启动与观察"))
         layout.addWidget(info_card)
 
         desc_label = QtWidgets.QLabel(
-            "本软件面向控制算法调试与被控对象仿真联调，支持多模型场景观察、波形测量、数据录制和主题化界面。"
+            "本软件面向控制算法调试与被控对象仿真联调。软件内仅保留 EXE 精简使用说明，便于直接上手。"
         )
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
-        readme_btn = buttons.addButton("使用说明", QtWidgets.QDialogButtonBox.ActionRole)
-        requirements_btn = buttons.addButton("需求文档", QtWidgets.QDialogButtonBox.ActionRole)
-        copy_path_btn = buttons.addButton("复制项目路径", QtWidgets.QDialogButtonBox.ActionRole)
-        readme_btn.clicked.connect(lambda: self._open_local_document(README_PATH, "使用说明"))
-        requirements_btn.clicked.connect(lambda: self._open_local_document(REQUIREMENTS_PATH, "需求规格说明"))
-        copy_path_btn.clicked.connect(self._copy_project_path)
+        readme_btn = buttons.addButton("EXE 使用说明", QtWidgets.QDialogButtonBox.ActionRole)
+        readme_btn.clicked.connect(lambda: self._open_local_document(README_PATH, "EXE 使用说明"))
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
         dialog.exec_()
@@ -1348,14 +1352,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.wave_mouse_pan_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("pan"))
         self.wave_mouse_rect_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("rect"))
 
-        self.open_readme_action = QtWidgets.QAction("使用说明", self)
-        self.open_readme_action.triggered.connect(lambda: self._open_local_document(README_PATH, "使用说明"))
-        self.open_requirements_action = QtWidgets.QAction("需求规格说明", self)
-        self.open_requirements_action.triggered.connect(
-            lambda: self._open_local_document(REQUIREMENTS_PATH, "需求规格说明")
-        )
-        self.copy_project_path_action = QtWidgets.QAction("复制项目路径", self)
-        self.copy_project_path_action.triggered.connect(self._copy_project_path)
+        self.open_readme_action = QtWidgets.QAction("EXE 使用说明", self)
+        self.open_readme_action.triggered.connect(lambda: self._open_local_document(README_PATH, "EXE 使用说明"))
         self.show_welcome_action = QtWidgets.QAction("欢迎页", self)
         self.show_welcome_action.triggered.connect(lambda: self._show_welcome_page(force=True))
         self.show_welcome_on_startup_action = QtWidgets.QAction("启动时显示欢迎页", self)
@@ -1425,9 +1423,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.help_menu.addAction(self.show_welcome_on_startup_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.open_readme_action)
-        self.help_menu.addAction(self.open_requirements_action)
-        self.help_menu.addAction(self.copy_project_path_action)
-        self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
         self.workbench_toolbar = QtWidgets.QToolBar("工作台工具栏")
@@ -2016,26 +2011,51 @@ class MainWindow(QtWidgets.QMainWindow):
     def _read_settings_file(self, path: Path):
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def _settings_storage_path(self) -> Path:
+        return USER_SETTINGS_PATH
+
+    def _settings_dialog_root(self) -> Path:
+        path = self._settings_storage_path().parent
+        if path.exists():
+            return path
+        if LEGACY_USER_SETTINGS_PATH.exists():
+            return LEGACY_USER_SETTINGS_PATH.parent
+        return SOFTWARE_ROOT
+
+    def _report_settings_save_error(self, path: Path, exc: Exception):
+        message = f"设置保存失败: {path}"
+        detail = str(exc).strip()
+        if detail:
+            message = f"{message} ({detail})"
+        if message == self._settings_save_error:
+            return
+        self._settings_save_error = message
+        if hasattr(self, "log_panel"):
+            self.log_panel.append_line(f"[设置] {message}")
+        self.statusBar().showMessage(message, 5000)
+
     def _save_persistent_settings(self):
         try:
-            self._write_settings_file(USER_SETTINGS_PATH)
-        except Exception:
-            pass
+            self._write_settings_file(self._settings_storage_path())
+            self._settings_save_error = ""
+        except Exception as exc:
+            self._report_settings_save_error(self._settings_storage_path(), exc)
 
     def _load_persistent_settings(self):
-        if not USER_SETTINGS_PATH.exists():
+        settings_path = self._settings_storage_path()
+        if not settings_path.exists():
             return
         try:
-            self._apply_settings_payload(self._read_settings_file(USER_SETTINGS_PATH))
-        except Exception:
-            self.statusBar().showMessage("已忽略损坏的本地设置文件", 3000)
+            self._apply_settings_payload(self._read_settings_file(settings_path))
+        except Exception as exc:
+            self.statusBar().showMessage(f"已忽略损坏的本地设置文件: {settings_path} ({exc})", 5000)
 
     def _export_settings_via_dialog(self):
         default_name = f"ui_settings_{time.strftime('%Y%m%d_%H%M%S')}.json"
         target, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "导出设置",
-            str(SOFTWARE_ROOT / default_name),
+            str(self._settings_dialog_root() / default_name),
             "JSON 文件 (*.json)",
         )
         if not target:
@@ -2051,7 +2071,7 @@ class MainWindow(QtWidgets.QMainWindow):
         source, _ = QtWidgets.QFileDialog.getOpenFileName(
             self,
             "加载设置",
-            str(SOFTWARE_ROOT),
+            str(self._settings_dialog_root()),
             "JSON 文件 (*.json)",
         )
         if not source:
