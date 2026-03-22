@@ -1,8 +1,12 @@
 {
-  "version": 1,
+  "version": 5,
+  "theme": "ocean",
+  "theme_user_selected": true,
+  "show_welcome_on_startup": false,
+  "welcome_seen": true,
   "window": {
-    "geometry": "AdnQywADAAD/////////9wAAB4AAAAQGAAAACQAAACYAAAZIAAAD0QAAAAACAAAAB4AAAAAAAAAAHQAAB38AAAQF",
-    "state": "AAAA/wAAAAD9AAAAAwAAAAAAAAC+AAACrPwCAAAAAfwAAABOAAACrAAAAI4BAAAW+gAAAAACAAAAA/sAAAAeAGQAbwBjAGsAXwBjAG8AbgBuAGUAYwB0AGkAbwBuAQAAAAD/////AAAAdwD////7AAAAGABkAG8AYwBrAF8AYwBvAG4AdAByAG8AbAEAAAAA/////wAAAHcA////+wAAABoAZABvAGMAawBfAGMAaABhAG4AbgBlAGwAcwEAAAAA/////wAAAHcA////AAAAAQAAAQcAAAKs/AIAAAAB/AAAAE4AAAKsAAACPAEAABb6AAAAAAIAAAAC+wAAABQAZABvAGMAawBfAG0AbwBkAGUAbAEAAAAA/////wAAAf8A////+wAAABYAZABvAGMAawBfAHMAdABhAHQAdQBzAQAAAAD/////AAACJQD///8AAAADAAAHgAAAANL8AQAAAAH7AAAAGABkAG8AYwBrAF8AYwBvAG4AcwBvAGwAZQEAAAAAAAAHgAAAAJwA////AAAFswAAAqwAAAAEAAAABAAAAAgAAAAI/AAAAAEAAAACAAAAAQAAACIAdwBvAHIAawBiAGUAbgBjAGgAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA="
+    "geometry": "AdnQywADAAD/////////9wAAB4AAAAQGAAAACQAAACYAAAb2AAAD0QAAAAACAAAAB4AAAAAAAAAAHQAAB38AAAQF",
+    "state": "AAAA/wAAAAD9AAAAAgAAAAAAAAFvAAADh/wCAAAAAfwAAABJAAADhwAAAHcBAAAb+gAAAAECAAAAA/sAAAAeAGQAbwBjAGsAXwBjAG8AbgBuAGUAYwB0AGkAbwBuAQAAAAD/////AAAAWwD////7AAAAGABkAG8AYwBrAF8AYwBvAG4AdAByAG8AbAEAAAAA/////wAAAFsA////+wAAABoAZABvAGMAawBfAGMAaABhAG4AbgBlAGwAcwEAAAAA/////wAAAFsA////AAAAAQAAAQAAAAOH/AIAAAAC/AAAAEkAAAKhAAACFgEAABv6AAAAAAIAAAAC+wAAABQAZABvAGMAawBfAG0AbwBkAGUAbAEAAAAA/////wAAAfoA////+wAAABYAZABvAGMAawBfAHMAdABhAHQAdQBzAQAAAAD/////AAAB2gD////7AAAAGABkAG8AYwBrAF8AYwBvAG4AcwBvAGwAZQEAAALuAAAA4gAAAHcA////AAAFCQAAA4cAAAAEAAAABAAAAAgAAAAI/AAAAAEAAAACAAAAAQAAACIAdwBvAHIAawBiAGUAbgBjAGgAXwB0AG8AbwBsAGIAYQByAQAAAAD/////AAAAAAAAAAA="
   },
   "serial_panel": {
     "port": "COM7",
@@ -24,28 +28,28 @@
         "value": ""
       },
       {
-        "name": "比例参数",
+        "name": "预设参数",
+        "command": "ALG PID",
+        "type": "none",
+        "value": ""
+      },
+      {
+        "name": "预设参数",
         "command": "SET KP",
         "type": "float",
         "value": 1.2
       },
       {
-        "name": "积分参数",
+        "name": "预设参数",
         "command": "SET KI",
         "type": "float",
         "value": 0.3
       },
       {
-        "name": "微分参数",
+        "name": "预设参数",
         "command": "SET KD",
         "type": "float",
         "value": 0.05
-      },
-      {
-        "name": "参考目标",
-        "command": "SET REF",
-        "type": "float",
-        "value": 2.0
       }
     ],
     "current_index": 0,
@@ -59,7 +63,7 @@
   "plot_panel": {
     "window_sec": 20.0,
     "preset": "balance",
-    "follow_latest": true,
+    "follow_latest": false,
     "mouse_mode": "pan",
     "cursor_enabled": false,
     "annotation_enabled": false,

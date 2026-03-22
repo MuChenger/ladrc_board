@@ -266,8 +266,33 @@ class Model3DPanel(QtWidgets.QGroupBox):
         self._mode = "attitude"
         self._model_type = "rov"
         self._model_items = {}
+        self._metric_labels = []
+        self._scene_hud_labels = []
+        self._scene_hud_title_label = None
+        self._theme_palette = self._default_theme_palette()
 
         self._build()
+        self.apply_theme(self._theme_palette)
+
+    @staticmethod
+    def _default_theme_palette() -> dict:
+        return {
+            "border_strong": "#bec8d2",
+            "model_metric_bg": "rgba(248,251,255,0.96)",
+            "model_metric_border": "#d5e1ec",
+            "model_metric_text": "#1b3953",
+            "model_view_border": "rgba(130,156,182,96)",
+            "model_hud_bg": "rgba(18,30,44,178)",
+            "model_hud_border": "rgba(255,255,255,74)",
+            "model_hud_title": "rgba(245,248,252,232)",
+            "model_hud_text": "rgba(226,234,242,215)",
+            "model_backgrounds": {
+                "aircraft": "#b9dcff",
+                "trajectory": "#27425f",
+                "underwater": "#4a6a86",
+                "attitude": "#314a66",
+            },
+        }
 
     def _build(self):
         layout = QtWidgets.QVBoxLayout(self)
@@ -508,24 +533,21 @@ class Model3DPanel(QtWidgets.QGroupBox):
         label.setAlignment(QtCore.Qt.AlignCenter)
         label.setMinimumHeight(30 if compact else 32)
         label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
-        label.setStyleSheet(
-            "QLabel { background: rgba(237, 244, 251, 0.92); border: 1px solid #d5e1ec; "
-            "border-radius: 10px; padding: 4px 8px; color: #1b3953; font-weight: 600; }"
-        )
+        label.setStyleSheet(self._metric_label_stylesheet())
+        self._metric_labels.append(label)
         return label
 
     def _build_scene_hud_widget(self):
         box = QtWidgets.QFrame()
-        box.setStyleSheet(
-            "QFrame { background: rgba(18, 30, 44, 178); border: 1px solid rgba(255,255,255,74); border-radius: 12px; }"
-        )
+        box.setStyleSheet(self._scene_hud_card_stylesheet())
         layout = QtWidgets.QVBoxLayout(box)
         layout.setContentsMargins(10, 8, 10, 8)
         layout.setSpacing(2)
 
         title = QtWidgets.QLabel("场景信息")
-        title.setStyleSheet("color: rgba(245, 248, 252, 232); font-weight: 700;")
+        title.setStyleSheet(self._scene_hud_title_stylesheet())
         layout.addWidget(title)
+        self._scene_hud_title_label = title
 
         self.scene_mode_label = QtWidgets.QLabel("模式: 姿态模式")
         self.scene_model_label = QtWidgets.QLabel("模型: 水下机器人")
@@ -537,10 +559,69 @@ class Model3DPanel(QtWidgets.QGroupBox):
             self.scene_depth_label,
             self.scene_output_label,
         ):
-            label.setStyleSheet("color: rgba(226, 234, 242, 215);")
+            label.setStyleSheet(self._scene_hud_text_stylesheet())
+            self._scene_hud_labels.append(label)
             layout.addWidget(label)
 
         return box
+
+    def _metric_label_stylesheet(self) -> str:
+        return (
+            "QLabel { background: %(bg)s; border: 1px solid %(border)s; "
+            "border-radius: 10px; padding: 4px 8px; color: %(text)s; font-weight: 600; }"
+            % {
+                "bg": self._theme_palette["model_metric_bg"],
+                "border": self._theme_palette["model_metric_border"],
+                "text": self._theme_palette["model_metric_text"],
+            }
+        )
+
+    def _scene_hud_card_stylesheet(self) -> str:
+        return (
+            "QFrame { background: %(bg)s; border: 1px solid %(border)s; border-radius: 12px; }"
+            % {
+                "bg": self._theme_palette["model_hud_bg"],
+                "border": self._theme_palette["model_hud_border"],
+            }
+        )
+
+    def _scene_hud_title_stylesheet(self) -> str:
+        return "color: %s; font-weight: 700;" % self._theme_palette["model_hud_title"]
+
+    def _scene_hud_text_stylesheet(self) -> str:
+        return "color: %s;" % self._theme_palette["model_hud_text"]
+
+    def _make_color_button_style(self, color: QtGui.QColor) -> str:
+        text_color = "#111111" if color.lightness() > 128 else "#f3f4f6"
+        return (
+            "QPushButton { background-color: %(bg)s; color: %(fg)s; "
+            "border: 1px solid %(border)s; border-radius: 6px; padding: 5px 10px; }"
+            % {
+                "bg": color.name(),
+                "fg": text_color,
+                "border": self._theme_palette.get("border_strong", "#bec8d2"),
+            }
+        )
+
+    def apply_theme(self, theme: dict):
+        self._theme_palette = {**self._default_theme_palette(), **(theme or {})}
+
+        for label in self._metric_labels:
+            label.setStyleSheet(self._metric_label_stylesheet())
+        if hasattr(self, "scene_hud_card"):
+            self.scene_hud_card.setStyleSheet(self._scene_hud_card_stylesheet())
+        if self._scene_hud_title_label is not None:
+            self._scene_hud_title_label.setStyleSheet(self._scene_hud_title_stylesheet())
+        for label in self._scene_hud_labels:
+            label.setStyleSheet(self._scene_hud_text_stylesheet())
+        if OPENGL_AVAILABLE and hasattr(self, "view"):
+            self.view.setStyleSheet(
+                "border: 1px solid %s; border-radius: 12px;" % self._theme_palette["model_view_border"]
+            )
+        self._sync_external_model_material_controls()
+        self._sync_builtin_color_controls()
+        if OPENGL_AVAILABLE:
+            self._apply_mode_style()
 
     def eventFilter(self, obj, event):
         if obj is getattr(self, "view_container", None) and event.type() in (QtCore.QEvent.Resize, QtCore.QEvent.Show):
@@ -1836,8 +1917,14 @@ class Model3DPanel(QtWidgets.QGroupBox):
         if not OPENGL_AVAILABLE:
             return
 
+        backgrounds = self._theme_palette.get("model_backgrounds", {})
+        aircraft_bg = backgrounds.get("aircraft", "#b9dcff")
+        trajectory_bg = backgrounds.get("trajectory", "#27425f")
+        underwater_bg = backgrounds.get("underwater", "#4a6a86")
+        attitude_bg = backgrounds.get("attitude", "#314a66")
+
         if self._model_type == "aircraft":
-            self.view.setBackgroundColor("#b9dcff")
+            self.view.setBackgroundColor(aircraft_bg)
             if self._grid_item is not None:
                 self._grid_item.setVisible(False)
             for item in self._axes_items:
@@ -1872,7 +1959,7 @@ class Model3DPanel(QtWidgets.QGroupBox):
             return
 
         if self._mode == "trajectory":
-            self.view.setBackgroundColor("#27425f")
+            self.view.setBackgroundColor(trajectory_bg)
             if hasattr(self, "_air_ground_item") and self._air_ground_item is not None:
                 self._air_ground_item.setVisible(False)
             if hasattr(self, "_air_runway_item") and self._air_runway_item is not None:
@@ -1895,7 +1982,7 @@ class Model3DPanel(QtWidgets.QGroupBox):
             if self._seafloor_item is not None:
                 self._seafloor_item.setVisible(False)
         elif self._mode == "underwater":
-            self.view.setBackgroundColor("#4a6a86")
+            self.view.setBackgroundColor(underwater_bg)
             if hasattr(self, "_air_ground_item") and self._air_ground_item is not None:
                 self._air_ground_item.setVisible(False)
             if hasattr(self, "_air_runway_item") and self._air_runway_item is not None:
@@ -1916,7 +2003,7 @@ class Model3DPanel(QtWidgets.QGroupBox):
             if self._seafloor_item is not None:
                 self._seafloor_item.setVisible(True)
         else:
-            self.view.setBackgroundColor("#314a66")
+            self.view.setBackgroundColor(attitude_bg)
             if hasattr(self, "_air_ground_item") and self._air_ground_item is not None:
                 self._air_ground_item.setVisible(False)
             if hasattr(self, "_air_runway_item") and self._air_runway_item is not None:
@@ -2037,13 +2124,7 @@ class Model3DPanel(QtWidgets.QGroupBox):
             break
 
     def _sync_external_model_material_controls(self):
-        self.model_color_btn.setStyleSheet(
-            "QPushButton { background-color: %s; color: %s; }"
-            % (
-                self._external_model_color.name(),
-                "#111111" if self._external_model_color.lightness() > 128 else "#f3f4f6",
-            )
-        )
+        self.model_color_btn.setStyleSheet(self._make_color_button_style(self._external_model_color))
 
     def _sync_builtin_color_controls(self):
         if self._model_type == "aircraft":
@@ -2065,20 +2146,8 @@ class Model3DPanel(QtWidgets.QGroupBox):
             self.default_body_color_btn.setText("机身颜色")
             self.default_float_color_btn.setText("浮力块颜色")
 
-        self.default_body_color_btn.setStyleSheet(
-            "QPushButton { background-color: %s; color: %s; }"
-            % (
-                primary_color.name(),
-                "#111111" if primary_color.lightness() > 128 else "#f3f4f6",
-            )
-        )
-        self.default_float_color_btn.setStyleSheet(
-            "QPushButton { background-color: %s; color: %s; }"
-            % (
-                accent_color.name(),
-                "#111111" if accent_color.lightness() > 128 else "#f3f4f6",
-            )
-        )
+        self.default_body_color_btn.setStyleSheet(self._make_color_button_style(primary_color))
+        self.default_float_color_btn.setStyleSheet(self._make_color_button_style(accent_color))
         self._sync_menu_action_texts()
 
     def _sync_menu_action_texts(self):

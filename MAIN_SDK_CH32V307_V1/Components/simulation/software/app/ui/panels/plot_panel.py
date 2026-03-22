@@ -73,6 +73,60 @@ class PlotPanel(QtWidgets.QWidget):
             "disturbance": True,
         },
     }
+    VIEWBOX_MENU_TEXTS = {
+        "ViewBox options": "视图选项",
+        "View All": "显示全部",
+        "X axis": "X 轴",
+        "Y axis": "Y 轴",
+        "Mouse Mode": "鼠标模式",
+        "3 button": "三键平移",
+        "1 button": "框选缩放",
+    }
+    VIEWBOX_WIDGET_TEXTS = {
+        "label": "关联坐标轴：",
+        "autoRadio": "自动",
+        "manualRadio": "手动",
+        "invertCheck": "反转坐标轴",
+        "mouseCheck": "启用鼠标交互",
+        "visibleOnlyCheck": "仅可见数据",
+        "autoPanCheck": "仅自动平移",
+    }
+    PLOT_MENU_TEXTS = {
+        "Plot Options": "波形选项",
+        "Transforms": "变换",
+        "Downsample": "下采样",
+        "Average": "平均",
+        "Alpha": "透明度",
+        "Grid": "网格",
+        "Points": "数据点",
+    }
+    PLOT_WIDGET_TEXTS = {
+        "logXCheck": "X 对数",
+        "derivativeCheck": "导数 dy/dx",
+        "phasemapCheck": "Y 与 Y'",
+        "fftCheck": "功率谱 (FFT)",
+        "logYCheck": "Y 对数",
+        "subtractMeanCheck": "减去均值",
+        "clipToViewCheck": "裁剪到视图",
+        "maxTracesCheck": "最大轨迹数：",
+        "downsampleCheck": "启用下采样",
+        "forgetTracesCheck": "忽略隐藏轨迹",
+        "peakRadio": "峰值",
+        "meanRadio": "均值",
+        "subsampleRadio": "抽样",
+        "autoDownsampleCheck": "自动",
+        "averageGroup": "平均",
+        "alphaGroup": "透明度",
+        "autoAlphaCheck": "自动",
+        "xGridCheck": "显示 X 网格",
+        "yGridCheck": "显示 Y 网格",
+        "label": "透明度",
+        "pointsGroup": "数据点",
+        "autoPointsCheck": "自动",
+    }
+    SCENE_MENU_TEXTS = {
+        "Export...": "导出...",
+    }
 
     def __init__(self, window_sec: float = 20.0, parent=None):
         super().__init__(parent)
@@ -88,6 +142,7 @@ class PlotPanel(QtWidgets.QWidget):
         self._view_history_index = -1
         self._last_mouse_x = 0.0
         self._point_markers = []
+        self._theme = self._default_theme()
         self._build()
         self._init_channels()
         self._populate_measure_channel_combo()
@@ -96,6 +151,46 @@ class PlotPanel(QtWidgets.QWidget):
         self._set_mouse_mode("pan")
         self._set_default_x_range()
         self._push_view_history(force=True)
+        self.apply_theme(self._theme)
+
+    @staticmethod
+    def _default_theme() -> dict:
+        return {
+            "plot_background": "#ffffff",
+            "plot_axis": "#61758a",
+            "plot_text": "#294055",
+            "plot_grid_alpha": 0.16,
+            "plot_cursor": (80, 98, 120, 150),
+            "plot_measure_a": "#c58a00",
+            "plot_measure_b": "#157bc1",
+            "plot_annotation_bg": "rgba(255,255,255,235)",
+            "plot_annotation_text": "#213140",
+            "plot_annotation_border": "rgba(84,104,124,90)",
+        }
+
+    @staticmethod
+    def _to_qcolor(value) -> QtGui.QColor:
+        if isinstance(value, QtGui.QColor):
+            return QtGui.QColor(value)
+        if isinstance(value, (tuple, list)):
+            parts = [int(v) for v in value]
+            if len(parts) == 4:
+                return QtGui.QColor(parts[0], parts[1], parts[2], parts[3])
+            if len(parts) == 3:
+                return QtGui.QColor(parts[0], parts[1], parts[2])
+        text = str(value).strip()
+        if text.startswith("rgba(") and text.endswith(")"):
+            parts = [int(float(v.strip())) for v in text[5:-1].split(",")]
+            if len(parts) == 4:
+                return QtGui.QColor(parts[0], parts[1], parts[2], parts[3])
+        if text.startswith("rgb(") and text.endswith(")"):
+            parts = [int(float(v.strip())) for v in text[4:-1].split(",")]
+            if len(parts) == 3:
+                return QtGui.QColor(parts[0], parts[1], parts[2])
+        color = QtGui.QColor(text)
+        if color.isValid():
+            return color
+        return QtGui.QColor("#ffffff")
 
     def _build(self):
         self._root_layout = QtWidgets.QVBoxLayout(self)
@@ -181,6 +276,7 @@ class PlotPanel(QtWidgets.QWidget):
 
         self._view_box = self.plot.getViewBox()
         self._view_box.setMouseEnabled(x=True, y=True)
+        self._localize_context_menus()
         if hasattr(self._view_box, "sigRangeChangedManually"):
             self._view_box.sigRangeChangedManually.connect(self._on_manual_range_changed)
 
@@ -265,6 +361,41 @@ class PlotPanel(QtWidgets.QWidget):
         self.annotation_cb.setToolTip("开启后，点击波形可在最近数据点添加标签")
         self.clear_annotation_btn.setToolTip("清除当前所有点击标签")
         self._toggle_measurement(False)
+
+    def _localize_context_menus(self):
+        plot_item = self.plot.getPlotItem()
+        self._translate_menu(plot_item.vb.menu, self.VIEWBOX_MENU_TEXTS)
+        self._translate_widget_tree(plot_item.vb.menu, self.VIEWBOX_WIDGET_TEXTS)
+        self._translate_menu(plot_item.ctrlMenu, self.PLOT_MENU_TEXTS)
+        self._translate_widget_tree(plot_item.ctrlMenu, self.PLOT_WIDGET_TEXTS)
+        scene = self.plot.scene()
+        for action in getattr(scene, "contextMenu", []):
+            translated = self.SCENE_MENU_TEXTS.get(action.text())
+            if translated:
+                action.setText(translated)
+
+    def _translate_menu(self, menu: QtWidgets.QMenu, translations: Dict[str, str]):
+        title = translations.get(menu.title())
+        if title:
+            menu.setTitle(title)
+        for action in menu.actions():
+            translated_text = translations.get(action.text())
+            if translated_text:
+                action.setText(translated_text)
+            if action.menu() is not None:
+                self._translate_menu(action.menu(), translations)
+
+    def _translate_widget_tree(self, parent: QtWidgets.QWidget, translations: Dict[str, str]):
+        for widget in parent.findChildren(QtWidgets.QWidget):
+            translated_text = translations.get(widget.objectName())
+            if not translated_text:
+                continue
+            if isinstance(widget, QtWidgets.QAbstractButton):
+                widget.setText(translated_text)
+            elif isinstance(widget, QtWidgets.QLabel):
+                widget.setText(translated_text)
+            elif isinstance(widget, QtWidgets.QGroupBox):
+                widget.setTitle(translated_text)
 
     def _init_channels(self):
         specs = [
@@ -451,6 +582,68 @@ class PlotPanel(QtWidgets.QWidget):
         self._paused = not self._paused
         self.pause_btn.setText("继续" if self._paused else "暂停")
 
+    def apply_theme(self, theme: dict):
+        self._theme = {**self._default_theme(), **(theme or {})}
+
+        self.plot.setBackground(self._theme["plot_background"])
+        self.plot.showGrid(x=True, y=True, alpha=float(self._theme["plot_grid_alpha"]))
+        self.plot.setLabel("bottom", "时间", units="s", color=self._theme["plot_text"])
+        self.plot.setLabel("left", "数值", color=self._theme["plot_text"])
+        for axis_name in ("left", "bottom"):
+            axis = self.plot.getAxis(axis_name)
+            axis.setPen(pg.mkPen(self._theme["plot_axis"], width=1))
+            axis.setTextPen(pg.mkPen(self._theme["plot_text"]))
+
+        legend = self.plot.plotItem.legend
+        if legend is not None:
+            for _, label in legend.items:
+                try:
+                    label.item.setDefaultTextColor(QtGui.QColor(self._theme["plot_text"]))
+                except Exception:
+                    pass
+
+        cursor_rgba = tuple(int(v) for v in self._theme["plot_cursor"])
+        cursor_h_rgba = cursor_rgba[:3] + (max(60, int(cursor_rgba[3] * 0.75)),)
+        self._cursor_v_line.setPen(pg.mkPen(cursor_rgba, width=1))
+        self._cursor_h_line.setPen(pg.mkPen(cursor_h_rgba, width=1))
+
+        self._measure_line_a.setPen(pg.mkPen(self._theme["plot_measure_a"], width=2))
+        self._measure_line_b.setPen(pg.mkPen(self._theme["plot_measure_b"], width=2))
+        self._update_measure_label_style(self._measure_line_a, "A", self._theme["plot_measure_a"])
+        self._update_measure_label_style(self._measure_line_b, "B", self._theme["plot_measure_b"])
+
+        for marker_info in self._point_markers:
+            marker_info["marker"].setPen(pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.1))
+            marker_info["marker"].setBrush(pg.mkBrush(self._theme["plot_measure_a"]))
+            marker_info["text"].setHtml(
+                self._build_annotation_html(
+                    marker_info["label"],
+                    marker_info["x"],
+                    marker_info["y"],
+                )
+            )
+
+    def _update_measure_label_style(self, line: pg.InfiniteLine, label_text: str, color: str):
+        line.label.setColor(color)
+        line.label.fill = pg.mkBrush(self._to_qcolor(self._theme["plot_annotation_bg"]))
+        line.label.border = pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]))
+        line.label.setFormat(label_text)
+        line.label.update()
+
+    def _build_annotation_html(self, label_text: str, x_value: float, y_value: float) -> str:
+        return (
+            "<div style='background-color: {bg}; color: {fg}; "
+            "padding: 6px 8px; border: 1px solid {border}; border-radius: 4px;'>"
+            "<b>{label}</b><br/>t={x:.3f}s<br/>值={y:.3f}</div>"
+        ).format(
+            bg=self._theme["plot_annotation_bg"],
+            fg=self._theme["plot_annotation_text"],
+            border=self._theme["plot_annotation_border"],
+            label=label_text,
+            x=x_value,
+            y=y_value,
+        )
+
     def _set_window_sec(self, value: float):
         self._push_view_history()
         self.window_sec = float(value)
@@ -538,33 +731,38 @@ class PlotPanel(QtWidgets.QWidget):
             y=[y_value],
             symbol="o",
             size=9,
-            pen=pg.mkPen("#ffffff", width=1.2),
-            brush=pg.mkBrush("#f59e0b"),
+            pen=pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.1),
+            brush=pg.mkBrush(self._theme["plot_measure_a"]),
         )
         self.plot.addItem(marker)
 
         text_item = pg.TextItem(
-            html=(
-                "<div style='background-color: rgba(15,23,42,220); color: #e5edf7; "
-                "padding: 6px 8px; border: 1px solid rgba(255,255,255,60); border-radius: 4px;'>"
-                f"<b>{label_text}</b><br/>t={x_value:.3f}s<br/>值={y_value:.3f}</div>"
-            ),
+            html=self._build_annotation_html(label_text, x_value, y_value),
             anchor=(0, 1),
         )
         text_item.setPos(x_value, y_value)
         self.plot.addItem(text_item)
-        self._point_markers.append((marker, text_item, channel_name))
+        self._point_markers.append(
+            {
+                "marker": marker,
+                "text": text_item,
+                "channel": channel_name,
+                "label": label_text,
+                "x": float(x_value),
+                "y": float(y_value),
+            }
+        )
 
         if len(self._point_markers) > 20:
-            old_marker, old_text, _ = self._point_markers.pop(0)
-            self.plot.removeItem(old_marker)
-            self.plot.removeItem(old_text)
+            marker_info = self._point_markers.pop(0)
+            self.plot.removeItem(marker_info["marker"])
+            self.plot.removeItem(marker_info["text"])
 
     def clear_point_markers(self):
         while self._point_markers:
-            marker, text_item, _ = self._point_markers.pop()
-            self.plot.removeItem(marker)
-            self.plot.removeItem(text_item)
+            marker_info = self._point_markers.pop()
+            self.plot.removeItem(marker_info["marker"])
+            self.plot.removeItem(marker_info["text"])
 
     def _nearest_visible_values(self, x_value: float) -> List[str]:
         parts = []

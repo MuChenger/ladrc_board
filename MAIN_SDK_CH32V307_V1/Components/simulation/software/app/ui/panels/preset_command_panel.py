@@ -14,12 +14,26 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
     TYPE_FLOAT = "float"
     TYPE_TEXT = "text"
 
-    DEFAULT_PRESETS = [
+    LEGACY_DEFAULT_PRESETS = [
         {"name": "状态查询", "command": "GET STATUS", "type": TYPE_NONE, "value": ""},
         {"name": "比例参数", "command": "SET KP", "type": TYPE_FLOAT, "value": 1.20},
         {"name": "积分参数", "command": "SET KI", "type": TYPE_FLOAT, "value": 0.30},
         {"name": "微分参数", "command": "SET KD", "type": TYPE_FLOAT, "value": 0.05},
         {"name": "参考目标", "command": "SET REF", "type": TYPE_FLOAT, "value": 2.00},
+    ]
+    PREVIOUS_PID_DEFAULT_PRESETS = [
+        {"name": "状态查询", "command": "GET STATUS", "type": TYPE_NONE, "value": ""},
+        {"name": "切换 PID", "command": "ALG PID", "type": TYPE_NONE, "value": ""},
+        {"name": "PID 比例 KP", "command": "SET KP", "type": TYPE_FLOAT, "value": 1.20},
+        {"name": "PID 积分 KI", "command": "SET KI", "type": TYPE_FLOAT, "value": 0.30},
+        {"name": "PID 微分 KD", "command": "SET KD", "type": TYPE_FLOAT, "value": 0.05},
+    ]
+    DEFAULT_PRESETS = [
+        {"name": "状态查询", "command": "GET STATUS", "type": TYPE_NONE, "value": ""},
+        {"name": "预设参数", "command": "ALG PID", "type": TYPE_NONE, "value": ""},
+        {"name": "预设参数", "command": "SET KP", "type": TYPE_FLOAT, "value": 1.20},
+        {"name": "预设参数", "command": "SET KI", "type": TYPE_FLOAT, "value": 0.30},
+        {"name": "预设参数", "command": "SET KD", "type": TYPE_FLOAT, "value": 0.05},
     ]
 
     def __init__(self, parent=None):
@@ -34,7 +48,7 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(8)
 
-        hint = QtWidgets.QLabel("通过下拉框选择预设命令，也可以手动编辑并添加新的选项。")
+        hint = QtWidgets.QLabel("默认提供 5 个预设命令，也可以通过下拉框选择、手动编辑并继续添加新的选项。")
         hint.setObjectName("statusHint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -218,6 +232,26 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         self._presets = [dict(item) for item in self.DEFAULT_PRESETS]
         self._load_presets()
 
+    def _presets_match(self, left, right):
+        if len(left) != len(right):
+            return False
+        for left_item, right_item in zip(left, right):
+            if not isinstance(left_item, dict) or not isinstance(right_item, dict):
+                return False
+            if str(left_item.get("command", "")).strip().upper() != str(right_item.get("command", "")).strip().upper():
+                return False
+            if str(left_item.get("type", self.TYPE_NONE)) != str(right_item.get("type", self.TYPE_NONE)):
+                return False
+        return True
+
+    def _rename_to_current_default_names(self, presets):
+        renamed = []
+        for index, item in enumerate(presets):
+            current = dict(item)
+            current["name"] = self.DEFAULT_PRESETS[index]["name"]
+            renamed.append(current)
+        return renamed
+
     def _send_current_command(self):
         preset = self._collect_editor_state()
         command = preset["command"]
@@ -247,6 +281,7 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         if not isinstance(state, dict):
             return
 
+        migrated_from_defaults = False
         presets = state.get("presets")
         if isinstance(presets, list) and presets:
             normalized = []
@@ -265,6 +300,12 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
                     }
                 )
             if normalized:
+                if self._presets_match(normalized, self.LEGACY_DEFAULT_PRESETS):
+                    normalized = [dict(item) for item in self.DEFAULT_PRESETS]
+                    migrated_from_defaults = True
+                elif self._presets_match(normalized, self.PREVIOUS_PID_DEFAULT_PRESETS) or self._presets_match(normalized, self.DEFAULT_PRESETS):
+                    normalized = self._rename_to_current_default_names(normalized)
+                    migrated_from_defaults = True
                 self._presets = normalized
                 self._load_presets()
 
@@ -273,7 +314,7 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
             self.preset_combo.setCurrentIndex(index)
 
         editor_state = state.get("editor_state")
-        if isinstance(editor_state, dict):
+        if isinstance(editor_state, dict) and not migrated_from_defaults:
             self.name_edit.setText(str(editor_state.get("name", self.name_edit.text())))
             self.command_edit.setText(str(editor_state.get("command", self.command_edit.text())))
             combo_index = self.type_combo.findData(editor_state.get("type", self.TYPE_NONE))
