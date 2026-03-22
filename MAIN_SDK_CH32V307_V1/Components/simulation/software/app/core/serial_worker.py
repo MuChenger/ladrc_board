@@ -45,6 +45,16 @@ class SerialWorker(QtCore.QObject):
         self._stats_timer.setInterval(500)
         self._stats_timer.timeout.connect(self._emit_stats)
 
+    def _reset_session_state(self) -> None:
+        self._seq = 0
+        self._parser = StreamParser()
+        self._rx_frames = 0
+        self._tx_frames = 0
+        self._parse_errors = 0
+        self._dropped = 0
+        self._last_rx_ms = 0
+        self._last_latency_ms = 0
+
     @QtCore.pyqtSlot(str, int)
     def open(self, port_name: str, baudrate: int) -> None:
         if serial is None:
@@ -76,6 +86,8 @@ class SerialWorker(QtCore.QObject):
             except Exception:
                 pass
             self._serial = None
+        self._reset_session_state()
+        self._emit_stats()
         self.connection_changed.emit(False, "")
 
     @QtCore.pyqtSlot(str)

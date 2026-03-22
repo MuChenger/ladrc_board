@@ -8,6 +8,7 @@ class CsvRecorder:
         self._file = None
         self._writer = None
         self._fieldnames = None
+        self._rows = []
         self.path: Optional[Path] = None
 
     @property
@@ -21,17 +22,37 @@ class CsvRecorder:
         self.path = path
         self._writer = None
         self._fieldnames = None
+        self._rows = []
+
+    def _rewrite_file(self) -> None:
+        if self._file is None or self._fieldnames is None:
+            return
+        self._file.seek(0)
+        self._file.truncate(0)
+        self._writer = csv.DictWriter(self._file, fieldnames=self._fieldnames)
+        self._writer.writeheader()
+        for row in self._rows:
+            out = {k: row.get(k, "") for k in self._fieldnames}
+            self._writer.writerow(out)
+        self._file.flush()
 
     def write_row(self, row: Dict[str, object]) -> None:
         if self._file is None:
             return
+        normalized = dict(row)
         if self._writer is None:
-            self._fieldnames = list(row.keys())
+            self._fieldnames = list(normalized.keys())
             self._writer = csv.DictWriter(self._file, fieldnames=self._fieldnames)
             self._writer.writeheader()
         if self._fieldnames is None:
             return
-        out = {k: row.get(k, "") for k in self._fieldnames}
+        new_fields = [k for k in normalized.keys() if k not in self._fieldnames]
+        self._rows.append(normalized)
+        if new_fields:
+            self._fieldnames.extend(new_fields)
+            self._rewrite_file()
+            return
+        out = {k: normalized.get(k, "") for k in self._fieldnames}
         self._writer.writerow(out)
         self._file.flush()
 
@@ -41,4 +62,5 @@ class CsvRecorder:
         self._file = None
         self._writer = None
         self._fieldnames = None
+        self._rows = []
 

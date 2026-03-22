@@ -12,6 +12,27 @@ FRAME_HEAD = b"\xAA\x55"
 MSG_TELEMETRY = 0x01
 MSG_SIM_FEEDBACK = 0x10
 MSG_ACK = 0x20
+TELEMETRY_PRIMARY_KEYS = {
+    "roll",
+    "pitch",
+    "yaw",
+    "u_cmd",
+    "u",
+    "ref",
+    "feedback",
+    "algo_id",
+    "run_state",
+}
+TELEMETRY_DEPTH_KEYS = {"timestamp", "timestamp_ms", "depth", "depth_rate", "disturbance"}
+
+
+def _looks_like_telemetry_mapping(raw: Dict[str, object]) -> bool:
+    keys = {str(k).strip().lower() for k in raw.keys() if str(k).strip()}
+    if not keys:
+        return False
+    if keys & TELEMETRY_PRIMARY_KEYS:
+        return True
+    return "depth" in keys and len(keys & TELEMETRY_DEPTH_KEYS) >= 3
 
 
 def crc16_ccitt(data: bytes) -> int:
@@ -37,11 +58,14 @@ def _decode_text_line(line: str) -> Optional[Dict[str, object]]:
     if not line:
         return None
 
+    if line.upper().startswith("OK") or line.upper().startswith("ERR"):
+        return {"ack": line}
+
     if line.startswith("{") and line.endswith("}"):
         try:
             obj = json.loads(line)
             if isinstance(obj, dict):
-                return obj
+                return obj if _looks_like_telemetry_mapping(obj) else {"line": line}
         except json.JSONDecodeError:
             return None
         return None
@@ -53,16 +77,23 @@ def _decode_text_line(line: str) -> Optional[Dict[str, object]]:
                 continue
             k, v = item.split("=", 1)
             out[k.strip()] = v.strip()
-        return out if out else None
-
-    if line.upper().startswith("OK") or line.upper().startswith("ERR"):
-        return {"ack": line}
+        if not out:
+            return None
+        return out if _looks_like_telemetry_mapping(out) else {"line": line}
 
     return {"line": line}
 
 
 def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
     mapped = {k.lower(): v for k, v in raw.items()}
+    feedback_value = 0.0
+    feedback_present = False
+    if "feedback" in mapped:
+        feedback_value = _safe_float(mapped.get("feedback", 0.0))
+        feedback_present = True
+    elif "depth" in mapped:
+        feedback_value = _safe_float(mapped.get("depth", 0.0))
+        feedback_present = True
     telemetry = Telemetry(
         timestamp_ms=_safe_int(mapped.get("timestamp", mapped.get("timestamp_ms", 0))),
         roll=_safe_float(mapped.get("roll", 0.0)),
@@ -70,7 +101,7 @@ def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
         yaw=_safe_float(mapped.get("yaw", 0.0)),
         u_cmd=_safe_float(mapped.get("u_cmd", mapped.get("u", 0.0))),
         ref=_safe_float(mapped.get("ref", 0.0)),
-        feedback=_safe_float(mapped.get("feedback", mapped.get("depth", 0.0))),
+        feedback=feedback_value,
         algo_id=_safe_int(mapped.get("algo_id", 0)),
         run_state=_safe_int(mapped.get("run_state", 0)),
     )
@@ -92,6 +123,8 @@ def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
         if k in known:
             continue
         telemetry.extra[k] = _safe_float(v, 0.0)
+    if not feedback_present:
+        telemetry.extra["_feedback_missing"] = 1.0
 
     if telemetry.timestamp_ms <= 0:
         telemetry.timestamp_ms = int(time.time() * 1000)
@@ -194,19 +227,45 @@ class StreamParser:
 
         payload = frame[6:-2]
         if msg_id == MSG_TELEMETRY:
-            if payload_len < struct.calcsize("<IfffffBB"):
+            extended_fmt = "<IffffffBB"
+            legacy_fmt = "<IfffffBB"
+            extended_size = struct.calcsize(extended_fmt)
+            legacy_size = struct.calcsize(legacy_fmt)
+            if payload_len < legacy_size:
                 return "ERR"
-            ts, roll, pitch, yaw, u_cmd, ref, algo_id, run_state = struct.unpack("<IfffffBB", payload[:26])
-            tele = Telemetry(
-                timestamp_ms=int(ts),
-                roll=float(roll),
-                pitch=float(pitch),
-                yaw=float(yaw),
-                u_cmd=float(u_cmd),
-                ref=float(ref),
-                algo_id=int(algo_id),
-                run_state=int(run_state),
-            )
+            if payload_len >= extended_size:
+                ts, roll, pitch, yaw, u_cmd, ref, feedback, algo_id, run_state = struct.unpack(
+                    extended_fmt,
+                    payload[:extended_size],
+                )
+                tele = Telemetry(
+                    timestamp_ms=int(ts),
+                    roll=float(roll),
+                    pitch=float(pitch),
+                    yaw=float(yaw),
+                    u_cmd=float(u_cmd),
+                    ref=float(ref),
+                    feedback=float(feedback),
+                    algo_id=int(algo_id),
+                    run_state=int(run_state),
+                )
+            else:
+                ts, roll, pitch, yaw, u_cmd, ref, algo_id, run_state = struct.unpack(
+                    legacy_fmt,
+                    payload[:legacy_size],
+                )
+                tele = Telemetry(
+                    timestamp_ms=int(ts),
+                    roll=float(roll),
+                    pitch=float(pitch),
+                    yaw=float(yaw),
+                    u_cmd=float(u_cmd),
+                    ref=float(ref),
+                    feedback=0.0,
+                    algo_id=int(algo_id),
+                    run_state=int(run_state),
+                )
+                tele.extra["_feedback_missing"] = 1.0
             return MSG_TELEMETRY, tele
         if msg_id == MSG_ACK:
             text = payload.decode("utf-8", errors="ignore")
@@ -216,7 +275,7 @@ class StreamParser:
 
 def telemetry_to_record_dict(t: Telemetry) -> Dict[str, object]:
     out = asdict(t)
-    extra = out.pop("extra", {})
+    extra = {k: v for k, v in out.pop("extra", {}).items() if not str(k).startswith("_")}
     out.update(extra)
     return out
 

@@ -3,6 +3,7 @@ import math
 import os
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -26,7 +27,6 @@ ALGO_NAME = {0: "PID", 1: "LADRC", 2: "开环"}
 MODEL_NAME = {"rov": "水下机器人", "aircraft": "飞行器", "generic": "通用载体"}
 SOFTWARE_ROOT = Path(__file__).resolve().parents[2]
 APP_ICON_PATH = SOFTWARE_ROOT / "assets" / "icons" / "app_icon.svg"
-README_PATH = SOFTWARE_ROOT / "README.md"
 DISTURBANCE_LEVEL_TEXT = {
     "off": "关闭",
     "low": "低",
@@ -601,7 +601,6 @@ class StartupSplash(QtWidgets.QWidget):
 
 class WelcomeDialog(QtWidgets.QDialog):
     show_on_startup_changed = QtCore.pyqtSignal(bool)
-    open_readme_requested = QtCore.pyqtSignal()
     open_device_requested = QtCore.pyqtSignal()
     open_control_requested = QtCore.pyqtSignal()
     open_wave_requested = QtCore.pyqtSignal()
@@ -758,9 +757,7 @@ class WelcomeDialog(QtWidgets.QDialog):
         layout.addWidget(self.show_on_startup_cb)
 
         buttons = QtWidgets.QDialogButtonBox()
-        self.readme_btn = buttons.addButton("EXE 使用说明", QtWidgets.QDialogButtonBox.ActionRole)
         self.start_btn = buttons.addButton("开始使用", QtWidgets.QDialogButtonBox.AcceptRole)
-        self.readme_btn.clicked.connect(self.open_readme_requested.emit)
         self.device_btn.clicked.connect(self.open_device_requested.emit)
         self.control_btn.clicked.connect(self.open_control_requested.emit)
         self.wave_btn.clicked.connect(self.open_wave_requested.emit)
@@ -793,7 +790,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.cfg = DEFAULT_CONFIG
+        self.cfg = replace(DEFAULT_CONFIG)
         self.setWindowTitle(self.cfg.app_name)
         self._set_app_icon()
         self.resize(1600, 940)
@@ -813,6 +810,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._simulation_running = False
         self._waveform_window = None
         self._waveform_window_mode = None
+        self._console_dock_restoring = False
         self._theme_key = DEFAULT_THEME_KEY
         self._theme_user_selected = False
         self._left_sidebar_target_width = 0
@@ -820,6 +818,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._welcome_seen = False
         self._settings_save_error = ""
         self._welcome_dialog = None
+        self._legacy_binary_feedback_warned = False
 
         self.recorder = CsvRecorder()
 
@@ -853,7 +852,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_simulators(self):
         return {
-            "rov": DepthPlantSimulator(),
+            "rov": DepthPlantSimulator(
+                PlantParams(
+                    mass=8.0,
+                    damping=2.8,
+                    buoyancy_bias=-0.3,
+                    noise_std=0.005,
+                    disturb_amp=0.2,
+                    disturb_freq_hz=0.15,
+                )
+            ),
             "aircraft": DepthPlantSimulator(
                 PlantParams(
                     mass=6.4,
@@ -917,8 +925,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.command_panel.send_command.connect(self._send_command)
         self.command_panel.algo_selected.connect(self._on_algorithm_selected)
         self.command_panel.ref_changed.connect(self._on_reference_changed)
-        self.command_panel.console_message.connect(self.log_panel.append_line)
         self.command_panel.disturbance_level_changed.connect(self._on_disturbance_level_changed)
+        self.command_panel.sim_period_changed.connect(self._on_sim_period_changed)
         self.preset_command_panel.send_command.connect(self._send_preset_command)
         self.record_btn.clicked.connect(self._toggle_record)
         self.model_panel.model_combo.currentIndexChanged.connect(self._on_model_context_changed)
@@ -965,6 +973,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.log_dock)
         self.log_dock.setTitleBarWidget(self.log_panel.take_title_bar_widget())
+        self.console_toggle_view_action = self.log_dock.toggleViewAction()
+        self.console_toggle_view_action.setText("控制台")
+        self.log_panel.expand_requested.connect(self._toggle_log_dock_expanded)
+        self.log_panel.hide_requested.connect(self._hide_log_dock)
+        self.log_panel.close_requested.connect(self._close_log_dock)
+        self.log_dock.topLevelChanged.connect(self._sync_log_dock_controls)
+        self.log_dock.visibilityChanged.connect(self._sync_log_dock_controls)
+        self.log_panel.set_expanded(False)
 
         self.resizeDocks([self.connection_dock, self.model_dock], [450, 320], QtCore.Qt.Horizontal)
         self.resizeDocks([self.log_dock], [210], QtCore.Qt.Vertical)
@@ -1062,21 +1078,10 @@ class MainWindow(QtWidgets.QMainWindow):
             return
         self.setWindowIcon(icon)
 
-    def _open_local_document(self, path: Path, title: str):
-        if not path.exists():
-            QtWidgets.QMessageBox.warning(self, "打开失败", f"未找到{title}文件：\n{path}")
-            return
-        ok = QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(str(path.resolve())))
-        if not ok:
-            QtWidgets.QMessageBox.warning(self, "打开失败", f"无法打开{title}：\n{path}")
-
     def _ensure_welcome_dialog(self):
         if self._welcome_dialog is None:
             self._welcome_dialog = WelcomeDialog(self.cfg, self.windowIcon(), self)
             self._welcome_dialog.show_on_startup_changed.connect(self._set_show_welcome_on_startup)
-            self._welcome_dialog.open_readme_requested.connect(
-                lambda: self._open_local_document(README_PATH, "EXE 使用说明")
-            )
             self._welcome_dialog.open_device_requested.connect(lambda: self._focus_dock(self.connection_dock))
             self._welcome_dialog.open_control_requested.connect(lambda: self._focus_dock(self.control_dock))
             self._welcome_dialog.open_wave_requested.connect(self._focus_wave_workspace)
@@ -1123,6 +1128,74 @@ class MainWindow(QtWidgets.QMainWindow):
         dock.show()
         dock.raise_()
         self.activateWindow()
+
+    def _sync_log_dock_controls(self, *_args):
+        if not hasattr(self, "log_dock") or not hasattr(self, "log_panel"):
+            return
+        self.log_panel.set_expanded(self.log_dock.isFloating())
+
+    def _show_log_dock(self):
+        if not hasattr(self, "log_dock"):
+            return
+        if self.log_dock.isHidden():
+            self._restore_log_dock_embedded(focus=True)
+            self.statusBar().showMessage("控制台已恢复显示", 2500)
+            return
+        self.log_dock.show()
+        self.log_dock.raise_()
+        self.log_panel.console.setFocus(QtCore.Qt.OtherFocusReason)
+        self.activateWindow()
+
+    def _restore_log_dock_embedded(self, focus: bool = False):
+        if not hasattr(self, "log_dock"):
+            return
+        self._console_dock_restoring = True
+        try:
+            if self.log_dock.isFloating():
+                self.log_dock.showNormal()
+                self.log_dock.setFloating(False)
+            if self.dockWidgetArea(self.log_dock) == QtCore.Qt.NoDockWidgetArea:
+                self.addDockWidget(QtCore.Qt.BottomDockWidgetArea, self.log_dock)
+            self.log_dock.show()
+            self.resizeDocks([self.log_dock], [210], QtCore.Qt.Vertical)
+            if focus:
+                self.log_panel.console.setFocus(QtCore.Qt.OtherFocusReason)
+                self._focus_dock(self.log_dock)
+        finally:
+            self._console_dock_restoring = False
+            self._sync_log_dock_controls()
+
+    def _toggle_log_dock_expanded(self):
+        if not hasattr(self, "log_dock"):
+            return
+        if self.log_dock.isFloating():
+            self._restore_log_dock_embedded(focus=True)
+            return
+        self.log_dock.show()
+        self.log_dock.setFloating(True)
+        self.log_dock.resize(max(self.width() - 120, 1000), max(self.height() - 160, 360))
+        self.log_dock.showMaximized()
+        self.log_panel.console.setFocus(QtCore.Qt.OtherFocusReason)
+        self._sync_log_dock_controls()
+
+    def _hide_log_dock(self):
+        if not hasattr(self, "log_dock"):
+            return
+        self._restore_log_dock_embedded(focus=False)
+        self.log_dock.hide()
+        self.statusBar().showMessage("控制台已隐藏，可点击顶部工具栏“控制台”重新显示", 3500)
+        self._sync_log_dock_controls()
+
+    def _close_log_dock(self):
+        if not hasattr(self, "log_dock"):
+            return
+        if self.log_dock.isFloating():
+            self._restore_log_dock_embedded(focus=False)
+            self.statusBar().showMessage("控制台已还原为底部嵌入视图", 2500)
+        else:
+            self._restore_log_dock_embedded(focus=True)
+            self.statusBar().showMessage("控制台当前已是底部嵌入视图", 2500)
+        self._sync_log_dock_controls()
 
     def _focus_wave_workspace(self):
         self._restore_waveform_embedded()
@@ -1180,14 +1253,12 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(info_card)
 
         desc_label = QtWidgets.QLabel(
-            "本软件面向控制算法调试与被控对象仿真联调。软件内仅保留 EXE 精简使用说明，便于直接上手。"
+            "本软件面向控制算法调试与被控对象仿真联调，支持串口通信、波形观察、3D 场景监视与运行参数配置。"
         )
         desc_label.setWordWrap(True)
         layout.addWidget(desc_label)
 
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
-        readme_btn = buttons.addButton("EXE 使用说明", QtWidgets.QDialogButtonBox.ActionRole)
-        readme_btn.clicked.connect(lambda: self._open_local_document(README_PATH, "EXE 使用说明"))
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
         dialog.exec_()
@@ -1352,8 +1423,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.wave_mouse_pan_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("pan"))
         self.wave_mouse_rect_action.triggered.connect(lambda: self.plot_panel.set_mouse_mode_key("rect"))
 
-        self.open_readme_action = QtWidgets.QAction("EXE 使用说明", self)
-        self.open_readme_action.triggered.connect(lambda: self._open_local_document(README_PATH, "EXE 使用说明"))
         self.show_welcome_action = QtWidgets.QAction("欢迎页", self)
         self.show_welcome_action.triggered.connect(lambda: self._show_welcome_page(force=True))
         self.show_welcome_on_startup_action = QtWidgets.QAction("启动时显示欢迎页", self)
@@ -1362,6 +1431,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.show_welcome_on_startup_action.toggled.connect(self._set_show_welcome_on_startup)
         self.about_action = QtWidgets.QAction("关于", self)
         self.about_action.triggered.connect(self._show_about_dialog)
+        self.show_console_action = QtWidgets.QAction("控制台", self)
+        self.show_console_action.setToolTip("显示并聚焦控制台")
+        self.show_console_action.triggered.connect(self._show_log_dock)
 
         menu_bar = self.menuBar()
         menu_bar.setNativeMenuBar(False)
@@ -1417,12 +1489,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.show_views_menu = self.window_menu.addMenu("显示视图")
         self.reset_layout_action = self.window_menu.addAction("恢复默认布局")
         self.reset_layout_action.triggered.connect(self._restore_default_layout)
+        self.window_menu.addAction(self.show_console_action)
 
         self.help_menu = menu_bar.addMenu("帮助")
         self.help_menu.addAction(self.show_welcome_action)
         self.help_menu.addAction(self.show_welcome_on_startup_action)
-        self.help_menu.addSeparator()
-        self.help_menu.addAction(self.open_readme_action)
         self.help_menu.addAction(self.about_action)
 
         self.workbench_toolbar = QtWidgets.QToolBar("工作台工具栏")
@@ -1479,6 +1550,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workbench_toolbar.addWidget(self.wave_menu_btn)
         self.workbench_toolbar.addWidget(self.wave_window_btn)
         self.workbench_toolbar.addWidget(self.theme_combo)
+        self.workbench_toolbar.addAction(self.show_console_action)
         self.workbench_toolbar.addAction(self.follow_view_action)
         self.workbench_toolbar.addAction(self.model_panel.reset_view_action)
         self.workbench_toolbar.addAction(self.model_panel.clear_trail_action)
@@ -1984,6 +2056,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_theme(effective_theme, persist=False, show_message=False)
         self.serial_panel.apply_state(payload.get("serial_panel", {}))
         self.command_panel.apply_state(payload.get("command_panel", {}))
+        self._apply_sim_period_ms(self.command_panel.current_sim_period_ms(), show_message=False)
         self.preset_command_panel.apply_state(payload.get("preset_panel", {}))
         self.plot_panel.apply_state(payload.get("plot_panel", {}))
         self.model_panel.apply_state(payload.get("model_panel", {}))
@@ -2135,8 +2208,9 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _setup_timers(self):
         self.sim_timer = QtCore.QTimer(self)
-        self.sim_timer.setInterval(int(1000 / self.cfg.sim_hz))
+        self.sim_timer.setTimerType(QtCore.Qt.PreciseTimer)
         self.sim_timer.timeout.connect(self._on_sim_tick)
+        self._apply_sim_period_ms(self.command_panel.current_sim_period_ms(), show_message=False)
 
         self.ui_timer = QtCore.QTimer(self)
         self.ui_timer.setInterval(int(1000 / self.cfg.ui_refresh_hz))
@@ -2285,6 +2359,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self._latest_telemetry.ref = float(value)
         self._refresh_control_status()
 
+    def _apply_sim_period_ms(self, period_ms: int, show_message: bool = True):
+        period_ms = max(1, int(period_ms))
+        self._sim_period_ms = period_ms
+        if hasattr(self, "sim_timer") and self.sim_timer is not None:
+            self.sim_timer.setInterval(period_ms)
+        self.cfg.sim_hz = max(1, int(round(1000.0 / period_ms)))
+        if show_message:
+            self.statusBar().showMessage(
+                f"上位机运行周期已设置为 {period_ms} ms（约 {1000.0 / period_ms:.1f} Hz）",
+                2500,
+            )
+
+    def _on_sim_period_changed(self, period_ms: int):
+        self._apply_sim_period_ms(period_ms, show_message=True)
+
     def _on_disturbance_level_changed(self, level_key: str, scale: float):
         self._disturbance_level_key = level_key
         self._disturbance_scale = float(scale)
@@ -2299,10 +2388,60 @@ class MainWindow(QtWidgets.QMainWindow):
     def _connect_selected_port(self):
         self.open_serial_signal.emit(self.serial_panel.port_combo.currentText(), int(self.serial_panel.baud_combo.currentText()))
 
+    def _is_serial_connected(self) -> bool:
+        return bool(self.serial_panel.disconnect_btn.isEnabled())
+
+    @staticmethod
+    def _format_console_float(value: float, decimals: int = 3) -> str:
+        try:
+            return f"{float(value):.{decimals}f}"
+        except (TypeError, ValueError):
+            return "0.000"
+
+    def _format_telemetry_console_line(self, telemetry: Telemetry) -> str:
+        parts = [
+            f"timestamp={int(telemetry.timestamp_ms)}",
+            f"roll={self._format_console_float(telemetry.roll, 2)}",
+            f"pitch={self._format_console_float(telemetry.pitch, 2)}",
+            f"yaw={self._format_console_float(telemetry.yaw, 2)}",
+            f"u_cmd={self._format_console_float(telemetry.u_cmd, 3)}",
+            f"ref={self._format_console_float(telemetry.ref, 3)}",
+            f"feedback={self._format_console_float(telemetry.feedback, 3)}",
+            f"algo={ALGO_NAME.get(int(telemetry.algo_id), f'ALG_{telemetry.algo_id}')}",
+            f"run_state={int(telemetry.run_state)}",
+        ]
+        if getattr(telemetry, "extra", None):
+            for key in sorted(telemetry.extra.keys()):
+                parts.append(f"{key}={self._format_console_float(telemetry.extra[key], 3)}")
+        return ",".join(parts)
+
+    def _format_feedback_console_line(self, feedback: SimFeedback) -> str:
+        return (
+            f"timestamp={int(feedback.timestamp_ms)},"
+            f"depth={self._format_console_float(feedback.depth, 5)},"
+            f"depth_rate={self._format_console_float(feedback.depth_rate, 5)},"
+            f"disturbance={self._format_console_float(feedback.disturbance, 5)}"
+        )
+
+    def _log_outbound_command(self, command: str):
+        prefix = "[上位机->下位机][命令]" if self._is_serial_connected() else "[上位机命令][未连接]"
+        self.log_panel.append_line(f"{prefix} {command}")
+
+    def _log_outbound_feedback(self, feedback: SimFeedback):
+        if not self._is_serial_connected():
+            return
+        mode = "二进制" if self.serial_panel.binary_cb.isChecked() else "文本"
+        self.log_panel.append_line(
+            f"[上位机->下位机][仿真反馈/{mode}] {self._format_feedback_console_line(feedback)}"
+        )
+
+    def _log_inbound_telemetry(self, telemetry: Telemetry):
+        self.log_panel.append_line(f"[下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}")
+
     def _send_toolbar_command(self, command: str):
         self._apply_local_command_side_effects(command)
+        self._log_outbound_command(command)
         self.send_line_signal.emit(command)
-        self.log_panel.append_line(f"> {command}")
 
     def _current_model_type(self) -> str:
         return self.model_panel.current_model_type()
@@ -2331,12 +2470,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _send_command(self, command: str):
         self._apply_local_command_side_effects(command)
+        self._log_outbound_command(command)
         self.send_line_signal.emit(command)
 
     def _send_preset_command(self, command: str):
         self._apply_local_command_side_effects(command)
+        self._log_outbound_command(command)
         self.send_line_signal.emit(command)
-        self.log_panel.append_line(f"> {command}")
 
     def _set_record_path_text(self, text: str):
         metrics = self.record_path_label.fontMetrics()
@@ -2371,6 +2511,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_toolbar_state()
 
     def _on_connection_changed(self, connected: bool, desc: str):
+        if not connected:
+            self._legacy_binary_feedback_warned = False
         self.serial_panel.set_connected(connected, desc)
         self._sync_toolbar_state()
         state = "已连接" if connected else "已断开"
@@ -2379,7 +2521,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"串口状态: {state}{suffix}", 3000)
 
     def _on_line(self, line: str):
-        self.log_panel.append_line(line)
+        self.log_panel.append_line(f"[下位机->上位机][文本] {line}")
 
     def _append_log_error(self, text: str):
         self.log_panel.append_line(f"[错误] {text}")
@@ -2417,7 +2559,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"已切换到 {MODEL_NAME.get(model_type, model_type)}", 2500)
 
     def _on_telemetry(self, telemetry: Telemetry):
+        previous_feedback = self._latest_telemetry.feedback
+        feedback_missing = bool(getattr(telemetry, "extra", {}).pop("_feedback_missing", 0.0))
+        if feedback_missing:
+            telemetry.feedback = self._current_feedback().depth if self._simulation_running else previous_feedback
+            if not self._legacy_binary_feedback_warned:
+                self.log_panel.append_line(
+                    "[协议] 当前二进制遥测未包含 feedback，界面暂使用上一反馈值/仿真反馈值。建议升级为文本遥测或扩展二进制遥测。"
+                )
+                self._legacy_binary_feedback_warned = True
         self._latest_telemetry = telemetry
+        self._log_inbound_telemetry(telemetry)
 
         now_s = time.monotonic() - self._start_monotonic
         algo_name = ALGO_NAME.get(telemetry.algo_id, f"ALG_{telemetry.algo_id}")
@@ -2480,6 +2632,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         tx_period = 1.0 / max(1, self.cfg.serial_tx_hz)
         if now - self._last_serial_tx >= tx_period:
+            self._log_outbound_feedback(feedback)
             self.send_feedback_signal.emit(feedback)
             self._last_serial_tx = now
 

@@ -1,5 +1,8 @@
+# 说明：
+# 本文件仅保留给 `pip install -r requirements_pyqt.txt` 使用。
+# 依赖说明、安装方式、仿真原理和通信协议已统一整合到 README.md。
+
 PyQt5>=5.15
 pyqtgraph>=0.13
 pyserial>=3.5
 PyOpenGL>=3.1
-
