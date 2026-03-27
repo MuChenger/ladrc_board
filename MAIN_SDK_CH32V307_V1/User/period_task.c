@@ -2,6 +2,7 @@
 #include "MultiTimer.h"
 #include "auto_init.h"
 #include "ladrc/sim_ladrc.h"
+#include "sdkconfig.h"
 #include "sgl.h"
 #include "elog.h"
 
@@ -48,15 +49,17 @@ static int period_task_init (void)
     multiTimerStop (&simulation_task_timer);
     multiTimerStart (&simulation_task_timer, simulation_tick_period, simulation_task_timer_callback, NULL);
 
+#if defined(SDK_USING_SGL)
     multiTimerStop (&sgl_tick_timer);
     multiTimerStart (&sgl_tick_timer, sgl_tick_period, sgl_tick_timer_callback, NULL);
 
     multiTimerStop (&sgl_task_timer);
     multiTimerStart (&sgl_task_timer, sgl_task_period, sgl_task_timer_callback, NULL);
+#endif /* SDK_USING_SGL */
 
     log_i ("period task timer callback init success.");
     return 0;
 }
 
-INIT_PREV_EXPORT (period_task_init);
+INIT_APP_EXPORT (period_task_init);
 #endif /* SDK_USING_MULTI_TIMER */
