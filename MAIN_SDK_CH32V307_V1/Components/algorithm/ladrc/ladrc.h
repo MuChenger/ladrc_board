@@ -22,6 +22,15 @@ extern LADRC_TypeDef Pitch_Sysparam;
 
 #define RealTimeOut_Threshold 2000
 
+/* `wc` uses the configured value first, and falls back to `w0 / 4` only when needed. */
+#define LADRC_WC_MODE_EXPLICIT 0
+/* `wc` is always recomputed from `w0 / 4`, ignoring the configured `wc`. */
+#define LADRC_WC_MODE_FROM_W0_DIV4 1
+
+#ifndef LADRC_WC_MODE
+#define LADRC_WC_MODE LADRC_WC_MODE_EXPLICIT
+#endif
+
 /**
   * @brief 以下为LADRC相关函数
   */
