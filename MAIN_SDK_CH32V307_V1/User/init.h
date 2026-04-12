@@ -9,6 +9,7 @@
 #include "ladrc/sim_ladrc.h"
 #include "tft_st7735s.h"
 #include "timer.h"
+#include "uart.h"
 #include "sgl.h"
 #include "sdkconfig.h"
 #include "flashdb.h"

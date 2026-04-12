@@ -13,7 +13,14 @@ from ..core.models import SimFeedback, Telemetry
 from ..core.protocol import telemetry_to_record_dict
 from ..core.recorder import CsvRecorder
 from ..core.serial_worker import SerialWorker
-from ..core.simulator import DepthPlantSimulator, PlantParams
+from ..core.simulator import (
+    DepthPlantSimulator,
+    DisturbanceSignalGenerator,
+    DisturbanceParams,
+    LadrcParams,
+    LadrcSimulationSession,
+    PlantParams,
+)
 from .panels.command_panel import CommandPanel
 from .panels.log_panel import LogPanel
 from .panels.model_3d_panel import Model3DPanel
@@ -34,8 +41,81 @@ DISTURBANCE_LEVEL_TEXT = {
     "high": "高",
     "extreme": "极高",
 }
+LADRC_SIM_MODE_TEXT = {
+    0: "TD",
+    1: "LOOP",
+    2: "IDLE",
+}
 DEFAULT_THEME_KEY = "ocean"
 THEME_ORDER = ["ocean", "light", "dark"]
+
+
+def _screen_available_geometry(widget=None) -> QtCore.QRect:
+    app = QtWidgets.QApplication.instance()
+    screen = None
+    if widget is not None:
+        handle = widget.windowHandle() if hasattr(widget, "windowHandle") else None
+        screen = handle.screen() if handle is not None else None
+        if screen is None and hasattr(widget, "screen"):
+            screen = widget.screen()
+    if screen is None and app is not None:
+        screen = app.primaryScreen()
+    if screen is not None:
+        return screen.availableGeometry()
+    return QtCore.QRect(0, 0, 1600, 900)
+
+
+def _bounded_initial_size(
+    preferred_width: int,
+    preferred_height: int,
+    minimum_width: int,
+    minimum_height: int,
+    widget=None,
+    padding: int = 40,
+) -> QtCore.QSize:
+    geometry = _screen_available_geometry(widget)
+    max_width = max(320, int(geometry.width()) - int(padding))
+    max_height = max(240, int(geometry.height()) - int(padding))
+
+    width = min(int(preferred_width), max_width)
+    height = min(int(preferred_height), max_height)
+
+    if max_width >= int(minimum_width):
+        width = max(width, int(minimum_width))
+    if max_height >= int(minimum_height):
+        height = max(height, int(minimum_height))
+
+    return QtCore.QSize(width, height)
+
+
+def _constrain_window_to_screen(widget, padding: int = 12) -> None:
+    if widget is None:
+        return
+    available = _screen_available_geometry(widget)
+    max_width = max(320, int(available.width()) - int(padding))
+    max_height = max(240, int(available.height()) - int(padding))
+
+    width = min(int(widget.width()), max_width)
+    height = min(int(widget.height()), max_height)
+
+    left = int(available.left())
+    top = int(available.top())
+    right = left + max(0, int(available.width()) - width)
+    bottom = top + max(0, int(available.height()) - height)
+
+    x = min(max(int(widget.x()), left), right)
+    y = min(max(int(widget.y()), top), bottom)
+    widget.setGeometry(x, y, width, height)
+
+
+def _should_start_maximized(widget, padding: int = 12) -> bool:
+    if widget is None:
+        return False
+    available = _screen_available_geometry(widget)
+    return (
+        widget.minimumSizeHint().width() > max(0, int(available.width()) - int(padding))
+        or widget.minimumSizeHint().height() > max(0, int(available.height()) - int(padding))
+    )
 
 
 def _default_user_settings_dir() -> Path:
@@ -255,10 +335,44 @@ class WaveformDetachedWindow(QtWidgets.QWidget):
         self._display_mode = "floating"
         self.setAttribute(QtCore.Qt.WA_DeleteOnClose, False)
         self.setWindowTitle("波形窗口")
-        self.resize(1180, 760)
-        layout = QtWidgets.QVBoxLayout(self)
+        self.resize(_bounded_initial_size(1180, 760, 900, 560, self))
+        layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        self._splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self._splitter.setChildrenCollapsible(False)
+        layout.addWidget(self._splitter, 1)
+
+        self._plot_host = QtWidgets.QWidget()
+        self._plot_layout = QtWidgets.QVBoxLayout(self._plot_host)
+        self._plot_layout.setContentsMargins(0, 0, 0, 0)
+        self._plot_layout.setSpacing(0)
+        self._splitter.addWidget(self._plot_host)
+
+        self._channel_scroll = QtWidgets.QScrollArea()
+        self._channel_scroll.setWidgetResizable(True)
+        self._channel_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self._channel_scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self._channel_scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        self._channel_scroll.setMinimumWidth(280)
+        self._splitter.addWidget(self._channel_scroll)
+        self._splitter.setStretchFactor(0, 4)
+        self._splitter.setStretchFactor(1, 1)
+        self._splitter.setSizes([920, 340])
+
+    def set_plot_widget(self, widget: QtWidgets.QWidget):
+        if widget is None or widget.parentWidget() is self._plot_host:
+            return
+        self._plot_layout.addWidget(widget)
+
+    def set_channel_widget(self, widget: QtWidgets.QWidget):
+        if widget is None or self._channel_scroll.widget() is widget:
+            return
+        self._channel_scroll.setWidget(widget)
+
+    def take_channel_widget(self):
+        return self._channel_scroll.takeWidget()
 
     def apply_display_mode(self, mode: str):
         self._display_mode = mode
@@ -290,6 +404,13 @@ class WaveformDetachedWindow(QtWidgets.QWidget):
                 self.showNormal()
                 if normal_geometry.isValid():
                     self.setGeometry(normal_geometry)
+        QtCore.QTimer.singleShot(0, self._apply_default_splitter_sizes)
+
+    def _apply_default_splitter_sizes(self):
+        total_width = max(self.width(), self._splitter.size().width(), 1100)
+        side_width = 300 if self._display_mode == "fullscreen" else 340
+        side_width = max(260, min(side_width, int(total_width * 0.32)))
+        self._splitter.setSizes([max(total_width - side_width, 720), side_width])
 
     def closeEvent(self, event):
         self.hide()
@@ -303,301 +424,6 @@ class WaveformDetachedWindow(QtWidgets.QWidget):
             event.accept()
             return
         super().keyPressEvent(event)
-
-
-class StartupOrbWidget(QtWidgets.QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(110, 110)
-        self._angle = 0.0
-        self._phase = 0.0
-        self._icon = QtGui.QIcon(str(APP_ICON_PATH)) if APP_ICON_PATH.exists() else QtGui.QIcon()
-        self._timer = QtCore.QTimer(self)
-        self._timer.setInterval(40)
-        self._timer.timeout.connect(self._advance_animation)
-        self._timer.start()
-
-    def _advance_animation(self):
-        self._angle = (self._angle + 4.2) % 360.0
-        self._phase = (self._phase + 0.09) % (math.pi * 2.0)
-        self.update()
-
-    def paintEvent(self, event):  # pragma: no cover - UI paint
-        painter = QtGui.QPainter(self)
-        painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        rect = self.rect().adjusted(6, 6, -6, -6)
-        center = rect.center()
-
-        glow_radius = 42 + math.sin(self._phase) * 4.0
-        glow_color = QtGui.QColor(47, 199, 164, 42)
-        painter.setPen(QtCore.Qt.NoPen)
-        painter.setBrush(glow_color)
-        painter.drawEllipse(center, glow_radius, glow_radius)
-
-        outer_rect = QtCore.QRectF(center.x() - 40, center.y() - 40, 80, 80)
-        ring_pen = QtGui.QPen(QtGui.QColor(31, 144, 168, 110), 4.0)
-        painter.setPen(ring_pen)
-        painter.setBrush(QtCore.Qt.NoBrush)
-        painter.drawEllipse(outer_rect)
-
-        arc_pen = QtGui.QPen(QtGui.QColor(34, 95, 167, 210), 5.5)
-        arc_pen.setCapStyle(QtCore.Qt.RoundCap)
-        painter.setPen(arc_pen)
-        painter.drawArc(outer_rect, int(-self._angle * 16), int(-110 * 16))
-
-        inner_rect = QtCore.QRectF(center.x() - 29, center.y() - 29, 58, 58)
-        gradient = QtGui.QRadialGradient(inner_rect.center(), 34)
-        gradient.setColorAt(0.0, QtGui.QColor("#f8fdff"))
-        gradient.setColorAt(0.55, QtGui.QColor("#dceffe"))
-        gradient.setColorAt(1.0, QtGui.QColor("#7db8db"))
-        painter.setPen(QtGui.QPen(QtGui.QColor(255, 255, 255, 140), 1.4))
-        painter.setBrush(QtGui.QBrush(gradient))
-        painter.drawEllipse(inner_rect)
-
-        if not self._icon.isNull():
-            icon_rect = inner_rect.adjusted(12, 12, -12, -12).toRect()
-            self._icon.paint(painter, icon_rect)
-
-        orbit_radius = 40
-        for index, color in enumerate((QtGui.QColor("#2fc7a4"), QtGui.QColor("#1f90a8"), QtGui.QColor("#9fe3f1"))):
-            angle = math.radians(self._angle + index * 120)
-            point = QtCore.QPointF(
-                center.x() + math.cos(angle) * orbit_radius,
-                center.y() + math.sin(angle) * orbit_radius,
-            )
-            painter.setPen(QtCore.Qt.NoPen)
-            painter.setBrush(color)
-            painter.drawEllipse(point, 4.2 - index * 0.6, 4.2 - index * 0.6)
-
-
-class StartupSplash(QtWidgets.QWidget):
-    def __init__(self, config, parent=None):
-        super().__init__(
-            parent,
-            QtCore.Qt.FramelessWindowHint | QtCore.Qt.SplashScreen | QtCore.Qt.WindowStaysOnTopHint,
-        )
-        self._config = config
-        self._status_base_text = "正在初始化启动环境"
-        self._dot_count = 0
-        self._intro_animation = None
-        self._finish_group = None
-        self._window_fade_animation = None
-        self._progress_animation = None
-        self._supports_window_opacity = QtWidgets.QApplication.instance().platformName() not in {"offscreen", "minimal"}
-        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.resize(560, 320)
-        self._build()
-
-        self._dot_timer = QtCore.QTimer(self)
-        self._dot_timer.setInterval(260)
-        self._dot_timer.timeout.connect(self._advance_loading_dots)
-        self._dot_timer.start()
-
-    def _build(self):
-        root_layout = QtWidgets.QVBoxLayout(self)
-        root_layout.setContentsMargins(18, 18, 18, 18)
-        root_layout.setSpacing(0)
-
-        self.card = QtWidgets.QFrame()
-        self.card.setObjectName("startupCard")
-        self.card.setStyleSheet(
-            """
-            QFrame#startupCard {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(250, 253, 255, 250),
-                    stop:0.42 rgba(233, 246, 251, 246),
-                    stop:1 rgba(204, 230, 242, 242));
-                border: 1px solid rgba(78, 141, 172, 102);
-                border-radius: 24px;
-            }
-            QFrame#startupTopStripe {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 rgba(47, 199, 164, 210),
-                    stop:0.55 rgba(31, 144, 168, 226),
-                    stop:1 rgba(34, 95, 167, 214));
-                border-radius: 6px;
-            }
-            QLabel#startupTitle {
-                color: #18405e;
-                font-size: 21px;
-                font-weight: 700;
-            }
-            QLabel#startupVersion {
-                color: #2f6b86;
-                background: rgba(31, 144, 168, 28);
-                border: 1px solid rgba(31, 144, 168, 68);
-                border-radius: 10px;
-                padding: 4px 10px;
-                font-weight: 600;
-            }
-            QLabel#startupTagline {
-                color: #527184;
-                font-size: 12px;
-            }
-            QLabel#startupStatus {
-                color: #16384f;
-                font-size: 12px;
-                font-weight: 600;
-            }
-            QLabel#startupHint {
-                color: #5c7688;
-                font-size: 11px;
-            }
-            QLabel#startupFootnote {
-                color: #6f8897;
-                font-size: 10px;
-            }
-            QProgressBar#startupProgress {
-                border: 1px solid rgba(101, 149, 177, 65);
-                border-radius: 8px;
-                background: rgba(255, 255, 255, 185);
-                height: 12px;
-            }
-            QProgressBar#startupProgress::chunk {
-                border-radius: 7px;
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #2fc7a4, stop:1 #1f90a8);
-                margin: 1px;
-            }
-            """
-        )
-        root_layout.addWidget(self.card)
-
-        card_layout = QtWidgets.QVBoxLayout(self.card)
-        card_layout.setContentsMargins(24, 22, 24, 20)
-        card_layout.setSpacing(14)
-
-        top_stripe = QtWidgets.QFrame()
-        top_stripe.setObjectName("startupTopStripe")
-        top_stripe.setFixedHeight(8)
-        card_layout.addWidget(top_stripe)
-
-        header_layout = QtWidgets.QHBoxLayout()
-        header_layout.setSpacing(16)
-
-        self.orb_widget = StartupOrbWidget()
-        header_layout.addWidget(self.orb_widget, 0, QtCore.Qt.AlignTop)
-
-        title_layout = QtWidgets.QVBoxLayout()
-        title_layout.setSpacing(6)
-        self.title_label = QtWidgets.QLabel(self._config.app_name)
-        self.title_label.setObjectName("startupTitle")
-        self.title_label.setWordWrap(True)
-        self.version_label = QtWidgets.QLabel(self._config.app_version)
-        self.version_label.setObjectName("startupVersion")
-        self.version_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.version_label.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
-        self.tagline_label = QtWidgets.QLabel(self._config.app_tagline)
-        self.tagline_label.setObjectName("startupTagline")
-        self.tagline_label.setWordWrap(True)
-        title_layout.addWidget(self.title_label)
-        title_layout.addWidget(self.version_label, 0, QtCore.Qt.AlignLeft)
-        title_layout.addWidget(self.tagline_label)
-        title_layout.addStretch(1)
-        header_layout.addLayout(title_layout, 1)
-        card_layout.addLayout(header_layout)
-
-        self.status_label = QtWidgets.QLabel()
-        self.status_label.setObjectName("startupStatus")
-        self.status_label.setWordWrap(True)
-        card_layout.addWidget(self.status_label)
-
-        self.progress = QtWidgets.QProgressBar()
-        self.progress.setObjectName("startupProgress")
-        self.progress.setTextVisible(False)
-        self.progress.setRange(0, 100)
-        self.progress.setValue(12)
-        card_layout.addWidget(self.progress)
-
-        self.hint_label = QtWidgets.QLabel("正在准备串口联调、波形工作台与三维仿真环境")
-        self.hint_label.setObjectName("startupHint")
-        self.hint_label.setWordWrap(True)
-        card_layout.addWidget(self.hint_label)
-
-        self.footnote_label = QtWidgets.QLabel("海洋蓝调工作台正在启动")
-        self.footnote_label.setObjectName("startupFootnote")
-        self.footnote_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
-        card_layout.addWidget(self.footnote_label)
-
-        self._refresh_status_text()
-
-    def _refresh_status_text(self):
-        dots = "." * self._dot_count
-        self.status_label.setText(f"{self._status_base_text}{dots}")
-
-    def _advance_loading_dots(self):
-        self._dot_count = (self._dot_count + 1) % 4
-        self._refresh_status_text()
-
-    def set_stage_text(self, text: str):
-        self._status_base_text = text.strip() or self._status_base_text
-        self._refresh_status_text()
-
-    def set_stage_info(self, text: str, hint: str | None = None, progress: int | None = None):
-        self._status_base_text = text.strip() or self._status_base_text
-        if hint is not None:
-            self.hint_label.setText(hint)
-        if progress is not None:
-            progress = max(0, min(int(progress), 100))
-            if self.progress.value() != progress:
-                self._progress_animation = QtCore.QPropertyAnimation(self.progress, b"value", self)
-                self._progress_animation.setDuration(260)
-                self._progress_animation.setStartValue(self.progress.value())
-                self._progress_animation.setEndValue(progress)
-                self._progress_animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-                self._progress_animation.start()
-        self._refresh_status_text()
-
-    def show_centered(self):
-        screen = QtWidgets.QApplication.primaryScreen()
-        if screen is not None:
-            geometry = screen.availableGeometry()
-            self.move(geometry.center() - self.rect().center())
-        if self._supports_window_opacity:
-            self.setWindowOpacity(0.0)
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        if self._supports_window_opacity:
-            self._intro_animation = QtCore.QPropertyAnimation(self, b"windowOpacity", self)
-            self._intro_animation.setDuration(320)
-            self._intro_animation.setStartValue(0.0)
-            self._intro_animation.setEndValue(1.0)
-            self._intro_animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-            self._intro_animation.start()
-
-    def finish_with(self, window: QtWidgets.QWidget):
-        self._dot_timer.stop()
-        self.set_stage_info("准备完成，正在打开工作台", "正在将海洋蓝调工作台切换到主界面", 100)
-
-        if self._supports_window_opacity:
-            window.setWindowOpacity(0.0)
-        window.show()
-        window.raise_()
-        window.activateWindow()
-
-        if not self._supports_window_opacity:
-            self.close()
-            return
-
-        self._window_fade_animation = QtCore.QPropertyAnimation(window, b"windowOpacity", window)
-        self._window_fade_animation.setDuration(320)
-        self._window_fade_animation.setStartValue(0.0)
-        self._window_fade_animation.setEndValue(1.0)
-        self._window_fade_animation.setEasingCurve(QtCore.QEasingCurve.OutCubic)
-
-        splash_fade = QtCore.QPropertyAnimation(self, b"windowOpacity", self)
-        splash_fade.setDuration(260)
-        splash_fade.setStartValue(self.windowOpacity())
-        splash_fade.setEndValue(0.0)
-        splash_fade.setEasingCurve(QtCore.QEasingCurve.InCubic)
-
-        self._finish_group = QtCore.QParallelAnimationGroup(self)
-        self._finish_group.addAnimation(self._window_fade_animation)
-        self._finish_group.addAnimation(splash_fade)
-        self._finish_group.finished.connect(self.close)
-        self._finish_group.start(QtCore.QAbstractAnimation.DeleteWhenStopped)
-
 
 class WelcomeDialog(QtWidgets.QDialog):
     show_on_startup_changed = QtCore.pyqtSignal(bool)
@@ -677,7 +503,7 @@ class WelcomeDialog(QtWidgets.QDialog):
         quick_start_layout.addWidget(quick_start_title)
         quick_start_steps = QtWidgets.QLabel(
             "1. 在左侧“设备”页选择串口并连接。\n"
-            "2. 在“控制”页设置参考值、算法和扰动等级。\n"
+            "2. 在“控制”页设置目标值、算法和扰动等级。\n"
             "3. 在中间波形区观察响应，在右侧查看 3D 场景。\n"
             "4. 需要时可录制 CSV 或导入外部模型。"
         )
@@ -793,20 +619,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.cfg = replace(DEFAULT_CONFIG)
         self.setWindowTitle(self.cfg.app_name)
         self._set_app_icon()
-        self.resize(1600, 940)
+        self.resize(_bounded_initial_size(1600, 940, 1100, 720, self, padding=48))
 
         self._default_window_state = None
         self._default_window_geometry = None
         self._latest_telemetry = Telemetry()
         self._feedback_by_model = self._build_feedback_store()
         self._simulators = self._build_simulators()
+        self._disturbance_generators = self._build_disturbance_generators()
+        self._ladrc_sim = LadrcSimulationSession()
         self._latest_feedback = self._feedback_by_model["rov"]
         self._start_monotonic = time.monotonic()
+        self._last_disturbance_preview_monotonic = self._build_disturbance_preview_timestamps()
         self._last_serial_tx = 0.0
         self._last_rx_ms = 0
         self._last_stats = {"rx_frames": 0, "tx_frames": 0, "parse_errors": 0, "latency_ms": 0}
         self._disturbance_level_key = "medium"
+        self._disturbance_mode_key = "sine"
         self._disturbance_scale = 1.0
+        self._disturbance_params = DisturbanceParams()
         self._simulation_running = False
         self._simulate_device_upload = False
         self._simulated_upload_integral = 0.0
@@ -823,6 +654,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._settings_save_error = ""
         self._welcome_dialog = None
         self._legacy_binary_feedback_warned = False
+        self._remote_ladrc_transport_active = False
+        self._awaiting_remote_status = False
+        self._last_remote_status_request_ms = 0
+        self._last_local_ladrc_expect_payload = None
+        self._last_local_ladrc_expect_ms = 0
+        self._ladrc_data_interaction_enabled = False
 
         self.recorder = CsvRecorder()
 
@@ -862,8 +699,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     damping=2.8,
                     buoyancy_bias=-0.3,
                     noise_std=0.005,
-                    disturb_amp=0.2,
-                    disturb_freq_hz=0.15,
+                    disturb_amp=0.45,
+                    disturb_freq_hz=0.18,
                 )
             ),
             "aircraft": DepthPlantSimulator(
@@ -872,8 +709,8 @@ class MainWindow(QtWidgets.QMainWindow):
                     damping=3.4,
                     buoyancy_bias=0.34,
                     noise_std=0.003,
-                    disturb_amp=0.08,
-                    disturb_freq_hz=0.11,
+                    disturb_amp=0.25,
+                    disturb_freq_hz=0.16,
                 )
             ),
             "generic": DepthPlantSimulator(
@@ -882,11 +719,24 @@ class MainWindow(QtWidgets.QMainWindow):
                     damping=2.2,
                     buoyancy_bias=0.0,
                     noise_std=0.004,
-                    disturb_amp=0.12,
-                    disturb_freq_hz=0.08,
+                    disturb_amp=0.35,
+                    disturb_freq_hz=0.14,
                 )
             ),
         }
+
+    def _build_disturbance_generators(self):
+        return {
+            model_type: DisturbanceSignalGenerator(
+                simulator.params.disturb_amp,
+                simulator.params.disturb_freq_hz,
+            )
+            for model_type, simulator in self._simulators.items()
+        }
+
+    def _build_disturbance_preview_timestamps(self):
+        now = time.monotonic()
+        return {model_type: now for model_type in self._simulators.keys()}
 
     def _build_ui(self):
         self.serial_panel = SerialPanel()
@@ -897,11 +747,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.plot_panel = PlotPanel(window_sec=self.cfg.plot_window_sec)
         self.model_panel = Model3DPanel()
         self.channel_widget = self.plot_panel.take_channel_widget()
+        self.channel_view = None
+        self._channel_dock_was_visible_before_wave_detach = True
 
         self.central_host = QtWidgets.QWidget()
         self.central_layout = QtWidgets.QVBoxLayout(self.central_host)
-        self.central_layout.setContentsMargins(8, 8, 8, 8)
-        self.central_layout.setSpacing(0)
+        self.central_layout.setContentsMargins(4, 4, 4, 4)
+        self.central_layout.setSpacing(6)
         self.plot_placeholder = self._create_plot_placeholder()
         self.central_layout.addWidget(self.plot_panel, 1)
         self.central_layout.addWidget(self.plot_placeholder, 1)
@@ -928,19 +780,27 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.command_panel.send_command.connect(self._send_command)
         self.command_panel.algo_selected.connect(self._on_algorithm_selected)
+        self.command_panel.algo_combo.currentIndexChanged.connect(self._sync_toolbar_state)
+        self.command_panel.algorithm_profiles_changed.connect(self._on_algorithm_profiles_changed)
         self.command_panel.ref_changed.connect(self._on_reference_changed)
         self.command_panel.disturbance_level_changed.connect(self._on_disturbance_level_changed)
+        self.command_panel.disturbance_mode_changed.connect(self._on_disturbance_mode_changed)
+        self.command_panel.disturbance_params_changed.connect(self._on_disturbance_params_changed)
         self.command_panel.sim_period_changed.connect(self._on_sim_period_changed)
         self.command_panel.simulated_upload_changed.connect(self._on_simulated_upload_changed)
         self.preset_command_panel.send_command.connect(self._send_preset_command)
         self.record_btn.clicked.connect(self._toggle_record)
         self.model_panel.model_combo.currentIndexChanged.connect(self._on_model_context_changed)
+        self.plot_panel.preset_combo.currentIndexChanged.connect(self._ensure_disturbance_plot_channels_visible)
 
         self._on_disturbance_level_changed(
             self.command_panel.current_disturbance_key(),
             self.command_panel.current_disturbance_scale(),
         )
+        self._on_disturbance_mode_changed(self.command_panel.current_disturbance_mode())
+        self._on_disturbance_params_changed(**self.command_panel.current_disturbance_params())
         self._sync_local_control_cache()
+        self._sync_ladrc_panel_to_session()
         self._on_simulated_upload_changed(self.command_panel.is_simulated_upload_enabled())
         self._sync_navigation_state()
         self._sync_toolbar_state()
@@ -949,6 +809,7 @@ class MainWindow(QtWidgets.QMainWindow):
         connection_view = self._make_connection_view()
         control_view = self._make_control_view()
         channel_view = self._wrap_scroll_area(self.channel_widget)
+        self.channel_view = channel_view
         self._left_sidebar_target_width = self._calculate_sidebar_target_width(
             connection_view,
             control_view,
@@ -988,7 +849,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.log_dock.visibilityChanged.connect(self._sync_log_dock_controls)
         self.log_panel.set_expanded(False)
 
-        self.resizeDocks([self.connection_dock, self.model_dock], [450, 320], QtCore.Qt.Horizontal)
+        self.resizeDocks([self.connection_dock, self.model_dock], [320, 320], QtCore.Qt.Horizontal)
         self.resizeDocks([self.log_dock], [210], QtCore.Qt.Vertical)
         self._ensure_left_sidebar_visibility()
 
@@ -997,21 +858,21 @@ class MainWindow(QtWidgets.QMainWindow):
     def _make_connection_view(self):
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
 
         self.record_card = QtWidgets.QFrame()
         self.record_card.setObjectName("recordCard")
         record_layout = QtWidgets.QVBoxLayout(self.record_card)
-        record_layout.setContentsMargins(12, 10, 12, 10)
-        record_layout.setSpacing(6)
+        record_layout.setContentsMargins(8, 8, 8, 8)
+        record_layout.setSpacing(5)
 
         record_header = QtWidgets.QHBoxLayout()
         record_header.setContentsMargins(0, 0, 0, 0)
         self.record_title_label = QtWidgets.QLabel("数据录制")
         self.record_title_label.setObjectName("sectionTitle")
         self.record_btn = QtWidgets.QPushButton("开始录制")
-        record_btn_width = self.fontMetrics().horizontalAdvance("停止录制") + 30
+        record_btn_width = self.fontMetrics().horizontalAdvance("停止录制") + 18
         self.record_btn.setMinimumWidth(record_btn_width)
         record_header.addWidget(self.record_title_label)
         record_header.addStretch(1)
@@ -1034,8 +895,8 @@ class MainWindow(QtWidgets.QMainWindow):
     def _make_control_view(self):
         container = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(container)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(10)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
         layout.addWidget(self.command_panel)
         layout.addWidget(self.preset_command_panel)
         layout.addStretch(1)
@@ -1277,10 +1138,10 @@ class MainWindow(QtWidgets.QMainWindow):
         area.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
         area.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.AdjustToContents)
         area.setAlignment(QtCore.Qt.AlignTop)
-        content_width = max(widget.minimumSizeHint().width(), widget.sizeHint().width(), 260)
-        widget.setMinimumWidth(content_width)
-        area.setMinimumWidth(content_width + 18)
+        widget.setMinimumWidth(0)
+        area.setMinimumWidth(0)
         area.setWidget(widget)
+        area.verticalScrollBar().setSingleStep(18)
         return area
 
     def _calculate_sidebar_target_width(self, *views: QtWidgets.QWidget) -> int:
@@ -1291,16 +1152,16 @@ class MainWindow(QtWidgets.QMainWindow):
             content = view.widget() if isinstance(view, QtWidgets.QScrollArea) else view
             if content is None:
                 continue
-            width_candidates.append(max(content.minimumSizeHint().width(), content.sizeHint().width()))
-            width_candidates.append(max(view.minimumSizeHint().width(), view.sizeHint().width()))
-        baseline = max(width_candidates or [360]) + 28
-        screen_limit = max(360, int(self.width() * 0.34))
-        return max(360, min(baseline, screen_limit))
+            width_candidates.append(content.minimumSizeHint().width())
+            width_candidates.append(view.minimumSizeHint().width())
+        baseline = max(width_candidates or [320]) + 12
+        screen_limit = max(320, int(self.width() * 0.27))
+        return max(320, min(baseline, min(screen_limit, 380)))
 
     def _ensure_left_sidebar_visibility(self):
         if not hasattr(self, "connection_dock"):
             return
-        target_width = max(int(self._left_sidebar_target_width or 0), 360)
+        target_width = max(int(self._left_sidebar_target_width or 0), 320)
         current_width = max(self.connection_dock.width(), self.control_dock.width(), self.channel_dock.width())
         if current_width >= target_width:
             return
@@ -1338,16 +1199,35 @@ class MainWindow(QtWidgets.QMainWindow):
         self.disconnect_serial_action.triggered.connect(self.close_serial_signal.emit)
 
         self.run_action = QtWidgets.QAction("启动", self)
-        self.run_action.triggered.connect(lambda: self._send_toolbar_command("RUN 1"))
+        self.run_action.triggered.connect(
+            lambda: self._send_toolbar_command(self.command_panel.current_protocol_start_command())
+        )
 
         self.stop_action = QtWidgets.QAction("停止", self)
-        self.stop_action.triggered.connect(lambda: self._send_toolbar_command("RUN 0"))
+        self.stop_action.triggered.connect(
+            lambda: self._send_toolbar_command(self.command_panel.current_protocol_stop_command())
+        )
 
         self.get_status_action = QtWidgets.QAction("读取状态", self)
-        self.get_status_action.triggered.connect(lambda: self._send_toolbar_command("GET STATUS"))
+        self.get_status_action.triggered.connect(
+            lambda: self._send_toolbar_command(self.command_panel.current_protocol_status_command())
+        )
 
         self.record_action = QtWidgets.QAction("开始录制", self)
         self.record_action.triggered.connect(self._toggle_record)
+
+        self.new_algorithm_action = QtWidgets.QAction("新建算法页...", self)
+        self.new_algorithm_action.setShortcut(QtGui.QKeySequence.New)
+        self.new_algorithm_action.triggered.connect(self._create_new_algorithm_page)
+        self.new_command_action = QtWidgets.QAction("新建命令...", self)
+        self.new_command_action.triggered.connect(self._create_new_command)
+        self.new_command_action.setEnabled(False)
+        self.delete_algorithm_action = QtWidgets.QAction("删除算法页...", self)
+        self.delete_algorithm_action.triggered.connect(self._delete_current_algorithm_page)
+        self.delete_algorithm_action.setEnabled(False)
+        self.delete_command_action = QtWidgets.QAction("删除命令...", self)
+        self.delete_command_action.triggered.connect(self._delete_current_command)
+        self.delete_command_action.setEnabled(False)
 
         self.load_settings_action = QtWidgets.QAction("加载设置...", self)
         self.load_settings_action.triggered.connect(self._load_settings_via_dialog)
@@ -1445,6 +1325,13 @@ class MainWindow(QtWidgets.QMainWindow):
         menu_bar.setNativeMenuBar(False)
 
         self.file_menu = menu_bar.addMenu("文件")
+        self.new_menu = self.file_menu.addMenu("新建")
+        self.new_menu.addAction(self.new_algorithm_action)
+        self.new_menu.addAction(self.new_command_action)
+        self.delete_menu = self.file_menu.addMenu("删除")
+        self.delete_menu.addAction(self.delete_algorithm_action)
+        self.delete_menu.addAction(self.delete_command_action)
+        self.file_menu.addSeparator()
         self.file_menu.addAction(self.record_action)
         self.file_menu.addSeparator()
         self.exit_action = self.file_menu.addAction("退出")
@@ -1546,9 +1433,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.workbench_toolbar.addAction(self.connect_serial_action)
         self.workbench_toolbar.addAction(self.disconnect_serial_action)
         self.workbench_toolbar.addSeparator()
-        self.workbench_toolbar.addAction(self.run_action)
-        self.workbench_toolbar.addAction(self.stop_action)
-        self.workbench_toolbar.addAction(self.get_status_action)
         self.workbench_toolbar.addAction(self.record_action)
         self.workbench_toolbar.addSeparator()
         self.workbench_toolbar.addWidget(self.model_selector_btn)
@@ -1665,10 +1549,16 @@ class MainWindow(QtWidgets.QMainWindow):
         window = self._ensure_waveform_window()
         if self.plot_panel.parentWidget() is self.central_host:
             self.central_layout.removeWidget(self.plot_panel)
-        elif self.plot_panel.parentWidget() is window:
-            window.layout().removeWidget(self.plot_panel)
+        elif self.plot_panel.parentWidget() is window._plot_host:
+            window._plot_layout.removeWidget(self.plot_panel)
 
-        window.layout().addWidget(self.plot_panel)
+        if self.channel_view is not None and self.channel_view.widget() is self.channel_widget:
+            self.channel_view.takeWidget()
+        self._channel_dock_was_visible_before_wave_detach = self.channel_dock.isVisible()
+        self.channel_dock.hide()
+
+        window.set_plot_widget(self.plot_panel)
+        window.set_channel_widget(self.channel_widget)
         self.plot_placeholder.show()
         self._waveform_window_mode = mode
         window.apply_display_mode(mode)
@@ -1678,7 +1568,15 @@ class MainWindow(QtWidgets.QMainWindow):
             window.showMaximized()
         else:
             window.setWindowTitle("波形悬浮窗")
-            window.resize(max(window.width(), 1080), max(window.height(), 680))
+            window.resize(
+                _bounded_initial_size(
+                    max(window.width(), 1080),
+                    max(window.height(), 680),
+                    900,
+                    560,
+                    window,
+                )
+            )
             window.show()
 
         window.raise_()
@@ -1690,12 +1588,17 @@ class MainWindow(QtWidgets.QMainWindow):
         if self._waveform_window_mode is None:
             return
         window = self._waveform_window
-        if window is not None and self.plot_panel.parentWidget() is window:
-            window.layout().removeWidget(self.plot_panel)
+        if window is not None and self.plot_panel.parentWidget() is window._plot_host:
+            window._plot_layout.removeWidget(self.plot_panel)
+            restored_channel_widget = window.take_channel_widget()
+            if restored_channel_widget is not None and self.channel_view is not None:
+                self.channel_view.setWidget(restored_channel_widget)
             window.hide()
         self.central_layout.insertWidget(0, self.plot_panel, 1)
         self.plot_placeholder.hide()
         self._waveform_window_mode = None
+        if self._channel_dock_was_visible_before_wave_detach:
+            self.channel_dock.show()
         self._sync_wave_window_actions()
         self.statusBar().showMessage("波形图已恢复到主界面", 2500)
 
@@ -1855,12 +1758,66 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: %(disabled_bg)s;
                 border-color: %(border)s;
             }
+            QPushButton[accentRole="true"], QToolButton[accentRole="true"] {
+                background: %(accent)s;
+                border: 1px solid %(accent)s;
+                color: #ffffff;
+                font-weight: 600;
+            }
+            QPushButton[accentRole="true"]:hover, QToolButton[accentRole="true"]:hover {
+                background: %(accent)s;
+                border-color: %(title_text)s;
+            }
+            QPushButton[accentRole="true"]:pressed, QToolButton[accentRole="true"]:pressed {
+                background: %(accent)s;
+                border-color: %(title_text)s;
+            }
+            QPushButton[secondaryRole="true"], QToolButton[secondaryRole="true"] {
+                background: %(surface_alt)s;
+                border: 1px solid %(border_strong)s;
+                color: %(text)s;
+            }
+            QPushButton[secondaryRole="true"]:hover, QToolButton[secondaryRole="true"]:hover {
+                background: %(button_hover)s;
+                border-color: %(accent)s;
+            }
+            QPushButton[dangerRole="true"], QToolButton[dangerRole="true"] {
+                background: %(surface)s;
+                border: 1px solid #d36b7a;
+                color: %(text)s;
+                font-weight: 600;
+            }
+            QPushButton[dangerRole="true"]:hover, QToolButton[dangerRole="true"]:hover {
+                background: %(button_hover)s;
+                border-color: #d36b7a;
+            }
             QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit {
                 background: %(input_bg)s;
                 border: 1px solid %(border_strong)s;
                 border-radius: 6px;
                 padding: 5px 7px;
                 selection-background-color: %(selection_bg)s;
+            }
+            QGroupBox#sidePanel {
+                background: transparent;
+                border: none;
+                margin-top: 0px;
+                padding-top: 0px;
+            }
+            QGroupBox#sidePanel::title {
+                subcontrol-origin: margin;
+                left: -9999px;
+                width: 0px;
+                height: 0px;
+                padding: 0px;
+                color: transparent;
+            }
+            QWidget#statusPanel, QWidget#logPanel {
+                background: transparent;
+            }
+            QFrame#channelControlPanel {
+                background: transparent;
+                border: none;
             }
             QComboBox::drop-down { border: none; width: 22px; }
             QComboBox QAbstractItemView {
@@ -1888,7 +1845,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 background: %(dock_title_bg)s;
                 border: 1px solid %(border)s;
                 border-bottom: none;
-                padding: 6px 10px;
+                padding: 4px 8px;
                 text-align: left;
                 color: %(dock_title_text)s;
             }
@@ -1899,8 +1856,14 @@ class MainWindow(QtWidgets.QMainWindow):
             }
             QLabel#dockTitleText { color: %(dock_title_text)s; font-weight: 600; }
             QToolButton#dockTitleAction {
-                padding: 3px 10px;
-                min-height: 22px;
+                padding: 2px 8px;
+                min-height: 20px;
+            }
+            QToolButton#dockTitleAction:checked {
+                background: %(accent)s;
+                color: white;
+                border: 1px solid %(accent)s;
+                font-weight: 600;
             }
             QMainWindow::separator { background: %(separator)s; width: 4px; height: 4px; }
             QScrollArea {
@@ -1938,11 +1901,11 @@ class MainWindow(QtWidgets.QMainWindow):
             QTabBar::tab {
                 background: %(tab_bg)s;
                 color: %(tab_text)s;
-                padding: 6px 12px;
+                padding: 5px 10px;
                 border: 1px solid %(border)s;
                 border-bottom: none;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
+                border-top-left-radius: 5px;
+                border-top-right-radius: 5px;
                 margin-right: 2px;
             }
             QTabBar::tab:selected {
@@ -1959,6 +1922,75 @@ class MainWindow(QtWidgets.QMainWindow):
             QLabel[statusValue="true"] { color: %(value_text)s; font-weight: 600; }
             QLabel#statusHint { color: %(muted)s; }
             QLabel#sectionTitle { font-weight: 700; color: %(title_text)s; }
+            QFrame#panelHero {
+                background: %(surface_alt)s;
+                border: 1px solid %(border)s;
+                border-radius: 12px;
+            }
+            QFrame#panelCard {
+                background: %(surface)s;
+                border: 1px solid %(border)s;
+                border-radius: 12px;
+            }
+            QLabel#panelEyebrow {
+                color: %(accent)s;
+                font-weight: 700;
+            }
+            QLabel#panelHeroTitle {
+                color: %(title_text)s;
+                font-size: 15px;
+                font-weight: 700;
+            }
+            QLabel#panelHeroSubtitle, QLabel#panelCardHint {
+                color: %(muted)s;
+            }
+            QLabel#panelBadge {
+                background: %(surface)s;
+                border: 1px solid %(border_strong)s;
+                border-radius: 12px;
+                padding: 5px 10px;
+                color: %(title_text)s;
+                font-weight: 600;
+            }
+            QLabel#panelBadge[connected="true"] {
+                background: %(accent)s;
+                border-color: %(accent)s;
+                color: #ffffff;
+            }
+            QLabel#panelBadge[timeout="true"] {
+                background: #d36b7a;
+                border-color: #d36b7a;
+                color: #ffffff;
+            }
+            QLabel#panelSummary {
+                background: %(surface)s;
+                border: 1px solid %(border)s;
+                border-radius: 12px;
+                padding: 5px 10px;
+                color: %(muted)s;
+                font-weight: 600;
+            }
+            QLabel#panelCardTitle, QLabel#panelSectionHeader {
+                color: %(title_text)s;
+                font-weight: 700;
+            }
+            QLabel#panelFieldLabel, QLabel#panelTableHeader {
+                color: %(muted)s;
+                font-weight: 600;
+            }
+            QGroupBox#panelSubGroup {
+                background: %(surface_alt)s;
+                border: 1px solid %(border)s;
+                border-radius: 12px;
+                margin-top: 12px;
+                padding-top: 12px;
+            }
+            QGroupBox#panelSubGroup::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 4px;
+                color: %(title_text)s;
+            }
             QFrame#recordCard {
                 background: %(surface)s;
                 border: 1px solid %(border)s;
@@ -2016,7 +2048,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _collect_settings_payload(self) -> dict:
         return {
-            "version": 5,
+            "version": 7,
             "theme": self._theme_key,
             "theme_user_selected": bool(self._theme_user_selected),
             "show_welcome_on_startup": bool(self._show_welcome_on_startup),
@@ -2030,6 +2062,7 @@ class MainWindow(QtWidgets.QMainWindow):
             "preset_panel": self.preset_command_panel.get_state(),
             "plot_panel": self.plot_panel.get_state(),
             "model_panel": self.model_panel.get_state(),
+            "log_panel": self.log_panel.get_state(),
         }
 
     def _apply_settings_payload(self, payload: dict):
@@ -2062,10 +2095,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._apply_theme(effective_theme, persist=False, show_message=False)
         self.serial_panel.apply_state(payload.get("serial_panel", {}))
         self.command_panel.apply_state(payload.get("command_panel", {}))
+        self._on_disturbance_mode_changed(self.command_panel.current_disturbance_mode())
+        self._on_disturbance_params_changed(**self.command_panel.current_disturbance_params())
         self._apply_sim_period_ms(self.command_panel.current_sim_period_ms(), show_message=False)
         self.preset_command_panel.apply_state(payload.get("preset_panel", {}))
         self.plot_panel.apply_state(payload.get("plot_panel", {}))
+        if self.plot_panel.current_preset_key() == "balance":
+            self.plot_panel.apply_preset("balance")
+        self._ensure_disturbance_plot_channels_visible()
         self.model_panel.apply_state(payload.get("model_panel", {}))
+        self.log_panel.apply_state(payload.get("log_panel", {}))
+        self._sync_ladrc_panel_to_session()
         self._sync_local_control_cache()
 
         window_state = payload.get("window", {})
@@ -2076,6 +2116,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.restoreGeometry(geometry)
             if state is not None:
                 self.restoreState(state)
+            _constrain_window_to_screen(self)
         self._ensure_left_sidebar_visibility()
 
         self._sync_wave_actions()
@@ -2164,6 +2205,60 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_persistent_settings()
         self.statusBar().showMessage(f"已加载设置: {source}", 3000)
 
+    def _create_new_algorithm_page(self):
+        algorithm_name = self.command_panel.open_new_algorithm_dialog(self)
+        if not algorithm_name:
+            return
+        self._sync_local_control_cache()
+        self._sync_toolbar_state()
+        self._save_persistent_settings()
+        self.statusBar().showMessage(f"已新建算法页: {algorithm_name}", 3000)
+
+    def _create_new_command(self):
+        algorithm_name = self.command_panel.open_new_command_dialog(self)
+        if not algorithm_name:
+            return
+        self._sync_toolbar_state()
+        self._save_persistent_settings()
+        self.statusBar().showMessage(f"已为 {algorithm_name} 新建命令", 3000)
+
+    def _delete_current_algorithm_page(self):
+        algorithm_name = self.command_panel.current_algorithm_label()
+        if not self.command_panel.is_custom_algorithm():
+            QtWidgets.QMessageBox.information(self, "无法删除算法页", "当前页不是自定义算法页。")
+            return
+
+        result = QtWidgets.QMessageBox.question(
+            self,
+            "删除算法页",
+            f"确定删除当前自定义算法页“{algorithm_name}”吗？\n该页参数和快捷命令会一起删除。",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if result != QtWidgets.QMessageBox.Yes:
+            return
+
+        removed_name = self.command_panel.remove_current_custom_algorithm()
+        if not removed_name:
+            return
+        self._sync_local_control_cache()
+        self._sync_toolbar_state()
+        self._save_persistent_settings()
+        self.statusBar().showMessage(f"已删除算法页: {removed_name}", 3000)
+
+    def _delete_current_command(self):
+        algorithm_name = self.command_panel.open_delete_command_dialog(self)
+        if not algorithm_name:
+            return
+        self._sync_toolbar_state()
+        self._save_persistent_settings()
+        self.statusBar().showMessage(f"已更新 {algorithm_name} 的快捷命令", 3000)
+
+    def _on_algorithm_profiles_changed(self):
+        self._sync_local_control_cache()
+        self._sync_toolbar_state()
+        self._save_persistent_settings()
+
     def _reset_user_settings(self):
         self._restore_waveform_embedded()
         self._set_simulation_running(False)
@@ -2182,10 +2277,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.preset_command_panel.reset_to_defaults()
         self.plot_panel.reset_to_defaults()
         self.model_panel.reset_to_defaults()
+        self.log_panel.reset_to_defaults()
+        self._sync_ladrc_panel_to_session()
         self._sync_local_control_cache()
         if self._default_window_geometry is not None:
             self.restoreGeometry(self._default_window_geometry)
         self._restore_default_layout()
+        _constrain_window_to_screen(self)
         self._ensure_left_sidebar_visibility()
         self._sync_wave_actions()
         self._sync_navigation_state()
@@ -2196,7 +2294,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _setup_worker(self):
         self.worker_thread = QtCore.QThread(self)
-        self.worker = SerialWorker(use_binary_tx=True)
+        self.worker = SerialWorker(use_binary_tx=self.serial_panel.binary_cb.isChecked())
         self.worker.moveToThread(self.worker_thread)
         self.worker_thread.start()
 
@@ -2217,6 +2315,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.sim_timer.setTimerType(QtCore.Qt.PreciseTimer)
         self.sim_timer.timeout.connect(self._on_sim_tick)
         self._apply_sim_period_ms(self.command_panel.current_sim_period_ms(), show_message=False)
+
+        self.remote_status_timer = QtCore.QTimer(self)
+        self.remote_status_timer.setTimerType(QtCore.Qt.PreciseTimer)
+        self.remote_status_timer.setInterval(max(50, int(round(1000 / max(1, self.cfg.ladrc_status_poll_hz)))))
+        self.remote_status_timer.timeout.connect(self._on_remote_status_poll_tick)
 
         self.ui_timer = QtCore.QTimer(self)
         self.ui_timer.setInterval(int(1000 / self.cfg.ui_refresh_hz))
@@ -2281,13 +2384,34 @@ class MainWindow(QtWidgets.QMainWindow):
             self.model_summary_label.setText(self.model_panel.get_status_summary())
 
     def _sync_toolbar_state(self):
+        control_running = self._is_control_running()
         self.connect_serial_action.setEnabled(self.serial_panel.connect_btn.isEnabled())
         self.disconnect_serial_action.setEnabled(self.serial_panel.disconnect_btn.isEnabled())
-        self.run_action.setEnabled(not self._simulation_running)
-        self.stop_action.setEnabled(self._simulation_running)
-        self.command_panel.run_btn.setEnabled(not self._simulation_running)
-        self.command_panel.stop_btn.setEnabled(self._simulation_running)
+        self.run_action.setEnabled(not control_running)
+        self.stop_action.setEnabled(control_running)
+        self.command_panel.run_btn.setEnabled(not control_running)
+        self.command_panel.stop_btn.setEnabled(control_running)
+        self.command_panel.ladrc_start_btn.setEnabled(not control_running)
+        self.command_panel.ladrc_idle_btn.setEnabled(control_running)
+        for page in self.command_panel._built_in_algorithm_pages.values():
+            page.start_btn.setEnabled(not control_running)
+            page.stop_btn.setEnabled(control_running)
+        for page in self.command_panel._custom_algorithm_pages.values():
+            page.start_btn.setEnabled(not control_running)
+            page.stop_btn.setEnabled(control_running)
         self.record_action.setText("停止录制" if self.recorder.active else "开始录制")
+
+        self.new_command_action.setEnabled(self.command_panel.is_custom_algorithm())
+        self.delete_algorithm_action.setEnabled(self.command_panel.is_custom_algorithm())
+        self.delete_command_action.setEnabled(self.command_panel.current_custom_algorithm_has_commands())
+
+    def _is_control_running(self) -> bool:
+        if self._simulation_running:
+            return True
+        try:
+            return int(round(float(self._latest_telemetry.run_state))) != 0
+        except (TypeError, ValueError):
+            return False
 
     def _algo_id_from_name(self, algo_name: str) -> int:
         mapping = {
@@ -2297,21 +2421,82 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         return mapping.get((algo_name or "").strip().upper(), 0)
 
+    def _current_control_algorithm_name(self) -> str:
+        current_key = self.command_panel.current_algorithm_key()
+        if self.command_panel.is_custom_algorithm(current_key):
+            return self.command_panel.current_algorithm_label()
+        return ALGO_NAME.get(self._latest_telemetry.algo_id, f"ALG_{self._latest_telemetry.algo_id}")
+
     def _refresh_control_status(self):
-        algo_name = ALGO_NAME.get(self._latest_telemetry.algo_id, f"ALG_{self._latest_telemetry.algo_id}")
         self.status_panel.update_control(
-            algo_name,
+            self._current_control_algorithm_name(),
             self._latest_telemetry.run_state,
             self._latest_telemetry.ref,
             self._latest_telemetry.feedback,
             self._latest_telemetry.u_cmd,
         )
+        self.plot_panel.set_runtime_channel_expanded(self._is_control_running())
 
     def _sync_local_control_cache(self):
-        self._latest_telemetry.algo_id = self._algo_id_from_name(self.command_panel.algo_combo.currentData() or "PID")
-        self._latest_telemetry.ref = float(self.command_panel.ref_spin.value())
+        self._latest_telemetry.algo_id = self._algo_id_from_name(self.command_panel.current_algorithm_key() or "LADRC")
+        if self._is_ladrc_algo_selected():
+            self._latest_telemetry.ref = float(self.command_panel.current_ladrc_config().get("expect", 0.0))
+        else:
+            self._latest_telemetry.ref = float(self.command_panel.ref_spin.value())
         self._latest_telemetry.run_state = 1 if self._simulation_running else 0
         self._refresh_control_status()
+
+    def _current_ladrc_params(self) -> LadrcParams:
+        config = self.command_panel.current_ladrc_config(apply_runtime_safe=True)
+        return LadrcParams(
+            r=float(config.get("r", 20.0)),
+            h=float(config.get("h", 0.02)),
+            w0=float(config.get("w0", 40.0)),
+            wc=float(config.get("wc", 2.0)),
+            b0=float(config.get("b0", 0.5)),
+        )
+
+    def _current_pid_gains(self):
+        config = self.command_panel.current_pid_config()
+        return (
+            float(config.get("KP", 1.2)),
+            float(config.get("KI", 0.3)),
+            float(config.get("KD", 0.05)),
+        )
+
+    def _sync_ladrc_panel_to_session(self):
+        config = self.command_panel.current_ladrc_config(apply_runtime_safe=True)
+        self.command_panel.set_reference_value(float(config.get("expect", 0.0)), sync_ladrc=True)
+        self._ladrc_sim.apply_params(self._current_ladrc_params())
+        self._ladrc_sim.set_disturbance_mode(self._disturbance_mode_key)
+        self._ladrc_sim.set_disturbance_level(self._disturbance_level_key, self._disturbance_scale)
+        self._ladrc_sim.set_init(float(config.get("init", 0.0)))
+        self._ladrc_sim.set_expect(float(config.get("expect", 0.0)))
+
+    def _ensure_disturbance_plot_channels_visible(self, *_args):
+        return
+
+    def _select_ladrc_algorithm(self):
+        combo_index = self.command_panel.algo_combo.findData("LADRC")
+        if combo_index >= 0:
+            blocker = QtCore.QSignalBlocker(self.command_panel.algo_combo)
+            self.command_panel.algo_combo.setCurrentIndex(combo_index)
+            del blocker
+        self.command_panel._refresh_runtime_entry_visibility()
+        self.command_panel.set_reference_value(
+            float(self.command_panel.current_ladrc_config().get("expect", self._latest_telemetry.ref)),
+            sync_ladrc=True,
+        )
+        self._latest_telemetry.algo_id = self._algo_id_from_name("LADRC")
+        self._refresh_remote_status_polling(request_now=False)
+        self._refresh_control_status()
+        self._sync_toolbar_state()
+
+    def _is_ladrc_algo_selected(self) -> bool:
+        return self.command_panel.current_algorithm_key().upper() == "LADRC"
+
+    def _is_local_ladrc_sim_active(self) -> bool:
+        return self._is_ladrc_algo_selected() and not self._is_serial_connected()
 
     def _set_simulation_running(self, running: bool):
         running = bool(running)
@@ -2327,46 +2512,488 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_toolbar_state()
         self.statusBar().showMessage("仿真已启动" if running else "仿真已停止", 2500)
 
-    def _apply_local_command_side_effects(self, command: str):
+    @staticmethod
+    def _parse_vofa_command(command: str):
+        raw = str(command).strip()
+        if not raw.startswith("#") or ":" not in raw:
+            return None, None
+        cmd_type, payload = raw[1:].split(":", 1)
+        cmd_type = cmd_type.strip().lower()
+        payload = payload.strip()
+        if not cmd_type or not payload:
+            return None, None
+        return cmd_type, payload
+
+    def _update_remote_ladrc_transport_from_command(self, command: str):
+        cmd_type, _ = self._parse_vofa_command(command)
+        if cmd_type in {"r", "h", "wo", "wc", "bo", "init", "rst"}:
+            self._remote_ladrc_transport_active = True
+            return
+        if cmd_type in {"expe", "run", "stat", "save"} and self._is_ladrc_algo_selected():
+            self._remote_ladrc_transport_active = True
+            return
         normalized = " ".join(str(command).strip().upper().split())
+        if normalized == "ALG LADRC":
+            self._remote_ladrc_transport_active = True
+
+    def _should_reject_legacy_pid_command(self, command: str) -> bool:
+        normalized = " ".join(str(command).strip().upper().split())
+        if not normalized or normalized.startswith("#"):
+            return False
+        if normalized == "ALG PID":
+            return True
+        if self.command_panel.current_algorithm_key().strip().upper() != "PID":
+            return False
+        return (
+            normalized in {"RUN 1", "RUN 0", "GET STATUS", "SAVE FLASH", "WRITE FLASH"}
+            or normalized.startswith("SET KP ")
+            or normalized.startswith("SET KI ")
+            or normalized.startswith("SET KD ")
+            or normalized.startswith("SET REF ")
+        )
+
+    def _translate_hash_command_for_legacy_transport(self, command: str):
+        cmd_type, payload = self._parse_vofa_command(command)
+        if not cmd_type:
+            return None
+
+        if cmd_type == "alg":
+            algo_name = str(payload).strip()
+            return [f"ALG {algo_name}"] if algo_name else []
+
+        if cmd_type in {"kp", "ki", "kd"}:
+            return [f"SET {cmd_type.upper()} {payload}"]
+
+        try:
+            numeric_payload = int(float(payload))
+        except (TypeError, ValueError):
+            numeric_payload = None
+
+        if cmd_type == "stat":
+            if numeric_payload:
+                return ["GET STATUS"]
+            return []
+        if cmd_type == "save":
+            if numeric_payload:
+                return ["SAVE FLASH"]
+            return []
+        if cmd_type == "run":
+            if numeric_payload == 1:
+                return ["RUN 1"]
+            if numeric_payload == 2:
+                return ["RUN 0"]
+            return [str(command).strip()]
+
+        return None
+
+    def _send_serial_command_line(self, command: str, log: bool = True, note_cache: bool = True):
+        outbound = str(command).strip()
+        if not outbound:
+            return
+        if note_cache:
+            self.command_panel.note_ladrc_command_sent(outbound)
+        cmd_type, payload = self._parse_vofa_command(outbound)
+        if cmd_type == "expe" and self._is_ladrc_algo_selected():
+            self._last_local_ladrc_expect_payload = self.command_panel._normalize_ladrc_payload(payload)
+            self._last_local_ladrc_expect_ms = int(time.time() * 1000)
+        self._update_remote_ladrc_transport_from_command(outbound)
+        if outbound.lower() == "#stat:1" and self._is_ladrc_algo_selected():
+            self._awaiting_remote_status = True
+            self._last_remote_status_request_ms = int(time.time() * 1000)
+        if log:
+            self._log_outbound_command(outbound)
+        self.send_line_signal.emit(outbound)
+
+    def _should_apply_remote_ladrc_ref(self, telemetry_ref: float) -> bool:
+        if self.command_panel.is_reference_input_active():
+            return False
+
+        payload = self.command_panel._normalize_ladrc_payload(telemetry_ref)
+        if payload is None:
+            return False
+
+        pending_local_payload = self.command_panel.pending_reference_payload()
+        if pending_local_payload is not None:
+            return payload == pending_local_payload
+
+        if self._last_local_ladrc_expect_payload is None:
+            return True
+
+        if payload == self._last_local_ladrc_expect_payload:
+            return True
+
+        now_ms = int(time.time() * 1000)
+        grace_ms = max(500, self.cfg.communication_timeout_ms * 3)
+        return (now_ms - self._last_local_ladrc_expect_ms) > grace_ms
+
+    def _set_ladrc_data_interaction_enabled(self, enabled: bool, request_now: bool = False):
+        self._ladrc_data_interaction_enabled = bool(enabled)
+        self._refresh_remote_status_polling(
+            request_now=bool(request_now) and self._ladrc_data_interaction_enabled and self._is_serial_connected()
+        )
+
+    def _should_poll_remote_ladrc_status(self) -> bool:
+        return self._is_serial_connected() and self._is_ladrc_algo_selected() and self._ladrc_data_interaction_enabled
+
+    def _request_remote_ladrc_status(self, log: bool = False) -> bool:
+        if not self._should_poll_remote_ladrc_status():
+            return False
+        self._send_serial_command_line("#stat:1", log=log, note_cache=False)
+        return True
+
+    def _refresh_remote_status_polling(self, request_now: bool = False):
+        active = self._should_poll_remote_ladrc_status()
+        if active:
+            self._remote_ladrc_transport_active = True
+            interval_ms = max(50, int(round(1000 / max(1, self.cfg.ladrc_status_poll_hz))))
+            self.remote_status_timer.setInterval(interval_ms)
+            if not self.remote_status_timer.isActive():
+                self.remote_status_timer.start()
+            if request_now:
+                self._request_remote_ladrc_status(log=False)
+            return
+
+        self.remote_status_timer.stop()
+        self._remote_ladrc_transport_active = False
+        self._awaiting_remote_status = False
+        self._last_remote_status_request_ms = 0
+
+    def _on_remote_status_poll_tick(self):
+        if not self._should_poll_remote_ladrc_status():
+            self._refresh_remote_status_polling(request_now=False)
+            return
+
+        now_ms = int(time.time() * 1000)
+        if (
+            self._awaiting_remote_status
+            and self._last_remote_status_request_ms > 0
+            and (now_ms - self._last_remote_status_request_ms) < self.cfg.communication_timeout_ms
+        ):
+            return
+
+        self._request_remote_ladrc_status(log=False)
+
+    def _translate_serial_commands(self, command: str):
+        raw = str(command).strip()
+        if not raw:
+            return []
+
+        normalized = " ".join(raw.upper().split())
+        if not normalized:
+            return []
+
+        if self.command_panel.current_algorithm_key().strip().upper() == "PID":
+            return [raw]
+
+        if not self._is_ladrc_algo_selected():
+            translated = self._translate_hash_command_for_legacy_transport(raw)
+            if translated is not None:
+                return translated
+            return [raw]
+
+        if normalized == "ALG LADRC":
+            return []
+        if normalized == "RUN 1":
+            commands = self.command_panel.build_ladrc_param_commands(force=True)
+            commands.extend(self.command_panel.build_ladrc_target_commands(force=True))
+            commands.append("#run:1")
+            return commands
+        if normalized == "RUN 0":
+            return ["#run:2"]
+        if normalized == "GET STATUS":
+            return ["#stat:1"]
+        if normalized in {"SAVE FLASH", "WRITE FLASH"}:
+            return ["#save:1"]
+        if normalized.startswith("SET REF "):
+            return self.command_panel.build_ladrc_commands((("expect", "expe"),), force=True)
+        return [raw]
+
+    def _dispatch_serial_command(self, command: str):
+        if self._should_reject_legacy_pid_command(command):
+            self.log_panel.append_line(
+                "[协议] PID 已统一使用 # 指令格式，请使用 #alg:PID、#kp/#ki/#kd、#expe、#run、#stat。"
+            )
+            self.statusBar().showMessage("PID 已统一使用 # 指令格式", 2500)
+            return
+        self._apply_local_command_side_effects(command)
+        outbound_commands = self._translate_serial_commands(command)
+        if not outbound_commands:
+            self._update_remote_ladrc_transport_from_command(command)
+            self.log_panel.append_line(
+                "[协议] 当前 LADRC 下位机使用 # 指令链路，已跳过 ALG LADRC 通用命令。"
+            )
+            self._refresh_remote_status_polling(request_now=False)
+            return
+
+        for outbound in outbound_commands:
+            self._send_serial_command_line(outbound, log=True, note_cache=True)
+
+        if self._is_ladrc_algo_selected():
+            lower_outbound = {str(item).strip().lower() for item in outbound_commands}
+            if "#run:0" in lower_outbound or "#run:1" in lower_outbound:
+                self._set_ladrc_data_interaction_enabled(True, request_now=True)
+            elif "#run:2" in lower_outbound or "#rst:1" in lower_outbound:
+                self._set_ladrc_data_interaction_enabled(False, request_now=False)
+            if self._should_poll_remote_ladrc_status():
+                need_follow_up_poll = "#stat:1" not in lower_outbound and not any(
+                    item.startswith("#run:") or item == "#rst:1" for item in lower_outbound
+                )
+                if need_follow_up_poll:
+                    self._request_remote_ladrc_status(log=False)
+
+        self._refresh_remote_status_polling(request_now=False)
+
+    def _sync_ladrc_command_cache_from_telemetry(self, telemetry: Telemetry):
+        state = {"expect": float(telemetry.ref)}
+        runtime_state = {}
+        for key in ("r", "h", "w0", "wc", "b0", "init"):
+            if key in telemetry.extra:
+                value = float(telemetry.extra[key])
+                state[key] = value
+                runtime_state[key] = value
+        if runtime_state:
+            self.command_panel.apply_ladrc_runtime_state(runtime_state)
+        if self._should_apply_remote_ladrc_ref(float(telemetry.ref)):
+            self.command_panel.set_reference_value(float(telemetry.ref), sync_ladrc=True)
+            payload = self.command_panel._normalize_ladrc_payload(telemetry.ref)
+            if payload == self._last_local_ladrc_expect_payload:
+                self._last_local_ladrc_expect_payload = None
+                self._last_local_ladrc_expect_ms = 0
+        self.command_panel.sync_ladrc_sent_cache(state)
+
+    def _set_ladrc_spin_value(self, widget: QtWidgets.QDoubleSpinBox, value: float):
+        blocker = QtCore.QSignalBlocker(widget)
+        widget.setValue(float(value))
+        del blocker
+
+    def _apply_local_algorithm_selection(self, algo_name: str) -> bool:
+        normalized_name = str(algo_name).strip()
+        if not normalized_name:
+            return False
+        self._latest_telemetry.algo_id = self._algo_id_from_name(normalized_name)
+        combo_index = self.command_panel.algo_combo.findData(normalized_name)
+        if combo_index >= 0:
+            blocker = QtCore.QSignalBlocker(self.command_panel.algo_combo)
+            self.command_panel.algo_combo.setCurrentIndex(combo_index)
+            del blocker
+        if normalized_name.upper() != "LADRC":
+            self._set_ladrc_data_interaction_enabled(False, request_now=False)
+        self.command_panel._refresh_runtime_entry_visibility()
+        self._refresh_control_status()
+        self._sync_toolbar_state()
+        return True
+
+    def _apply_local_ladrc_command(self, command: str) -> bool:
+        cmd_type, payload = self._parse_vofa_command(command)
+        if not cmd_type:
+            return False
+        if cmd_type in {"expe", "run", "stat", "save"} and not self._is_ladrc_algo_selected():
+            return False
+
+        try:
+            if cmd_type == "r":
+                self._select_ladrc_algorithm()
+                self._set_ladrc_spin_value(self.command_panel.ladrc_r_spin, float(payload))
+                self._ladrc_sim.apply_params(self._current_ladrc_params())
+                return True
+            if cmd_type == "h":
+                self._select_ladrc_algorithm()
+                self._set_ladrc_spin_value(self.command_panel.ladrc_h_spin, float(payload))
+                self._ladrc_sim.apply_params(self._current_ladrc_params())
+                return True
+            if cmd_type == "wo":
+                self._select_ladrc_algorithm()
+                self._set_ladrc_spin_value(self.command_panel.ladrc_w0_spin, float(payload))
+                self._ladrc_sim.apply_params(self._current_ladrc_params())
+                return True
+            if cmd_type == "wc":
+                self._select_ladrc_algorithm()
+                self._set_ladrc_spin_value(self.command_panel.ladrc_wc_spin, float(payload))
+                self._ladrc_sim.apply_params(self._current_ladrc_params())
+                return True
+            if cmd_type == "bo":
+                self._select_ladrc_algorithm()
+                self._set_ladrc_spin_value(self.command_panel.ladrc_b0_spin, float(payload))
+                self._ladrc_sim.apply_params(self._current_ladrc_params())
+                return True
+            if cmd_type == "init":
+                self._select_ladrc_algorithm()
+                value = float(payload)
+                self._set_ladrc_spin_value(self.command_panel.ladrc_init_spin, value)
+                self._ladrc_sim.set_init(value)
+                return True
+            if cmd_type == "expe":
+                self._select_ladrc_algorithm()
+                value = float(payload)
+                self.command_panel.set_reference_value(value, sync_ladrc=True)
+                self._ladrc_sim.set_expect(value)
+                self._latest_telemetry.ref = value
+                self._refresh_control_status()
+                return True
+            if cmd_type == "run":
+                self._select_ladrc_algorithm()
+                self._sync_ladrc_panel_to_session()
+                mode_value = int(float(payload))
+                mode = (
+                    LadrcSimulationSession.MODE_TD
+                    if mode_value == 0
+                    else LadrcSimulationSession.MODE_LOOP
+                    if mode_value == 1
+                    else LadrcSimulationSession.MODE_IDLE
+                )
+                self._ladrc_sim.set_mode(mode)
+                if self._is_local_ladrc_sim_active():
+                    self._set_simulation_running(mode != LadrcSimulationSession.MODE_IDLE)
+                    self._apply_local_ladrc_snapshot(
+                        self._ladrc_sim.snapshot(),
+                        max(1e-3, self._sim_period_ms / 1000.0),
+                    )
+                else:
+                    self._latest_telemetry.run_state = self._ladrc_sim.run_state()
+                    self._refresh_control_status()
+                    self._sync_toolbar_state()
+                return True
+            if cmd_type == "rst":
+                if int(float(payload)):
+                    self._select_ladrc_algorithm()
+                    self.command_panel.reset_ladrc_config()
+                    self._ladrc_sim.restore_defaults()
+                    if self._is_local_ladrc_sim_active():
+                        self._set_simulation_running(False)
+                        self._apply_local_ladrc_snapshot(
+                            self._ladrc_sim.snapshot(),
+                            max(1e-3, self._sim_period_ms / 1000.0),
+                        )
+                    else:
+                        self._latest_telemetry.run_state = 0
+                        self._latest_telemetry.ref = 0.0
+                        self._refresh_control_status()
+                        self._sync_toolbar_state()
+                return True
+            if cmd_type == "stat":
+                if int(float(payload)):
+                    self._sync_ladrc_panel_to_session()
+                    if self._is_simulated_upload_active():
+                        self._emit_simulated_status_snapshot()
+                    elif self._is_local_ladrc_sim_active():
+                        self._apply_local_ladrc_snapshot(
+                            self._ladrc_sim.snapshot(),
+                            max(1e-3, self._sim_period_ms / 1000.0),
+                        )
+                return True
+        except (TypeError, ValueError):
+            return False
+
+        return False
+
+    def _apply_local_hash_style_command(self, command: str) -> bool:
+        cmd_type, payload = self._parse_vofa_command(command)
+        if not cmd_type:
+            return False
+
+        if cmd_type == "alg":
+            return self._apply_local_algorithm_selection(payload)
+
+        if cmd_type in {"kp", "ki", "kd"}:
+            self._apply_local_algorithm_selection("PID")
+            return self.command_panel.apply_current_algorithm_set_command(f"SET {cmd_type.upper()} {payload}")
+
+        if cmd_type in {"expe", "ref"}:
+            try:
+                ref_value = float(payload)
+            except (TypeError, ValueError):
+                return False
+            self.command_panel.set_reference_value(ref_value, sync_ladrc=False)
+            self._latest_telemetry.ref = ref_value
+            self._refresh_control_status()
+            return True
+
+        try:
+            numeric_payload = int(float(payload))
+        except (TypeError, ValueError):
+            numeric_payload = None
+
+        if cmd_type == "run":
+            if numeric_payload == 1:
+                self._set_simulation_running(True)
+                return True
+            if numeric_payload == 2:
+                self._set_simulation_running(False)
+                return True
+            return False
+
+        if cmd_type == "stat":
+            if numeric_payload and self._is_simulated_upload_active():
+                self._emit_simulated_status_snapshot()
+            return True
+
+        if cmd_type == "save":
+            return True
+
+        return False
+
+    def _apply_local_command_side_effects(self, command: str):
+        if self._apply_local_ladrc_command(command):
+            return
+        if self._apply_local_hash_style_command(command):
+            return
+        raw_command = " ".join(str(command).strip().split())
+        normalized = raw_command.upper()
         if not normalized:
             return
         if normalized == "RUN 1":
+            if self._is_local_ladrc_sim_active():
+                self._sync_ladrc_panel_to_session()
+                self._ladrc_sim.set_mode(LadrcSimulationSession.MODE_LOOP)
             self._set_simulation_running(True)
             return
         if normalized == "RUN 0":
+            if self._is_local_ladrc_sim_active():
+                self._ladrc_sim.set_mode(LadrcSimulationSession.MODE_IDLE)
             self._set_simulation_running(False)
             return
         if normalized.startswith("ALG "):
-            algo_name = normalized[4:]
-            self._latest_telemetry.algo_id = self._algo_id_from_name(algo_name)
-            combo_index = self.command_panel.algo_combo.findData(algo_name)
-            if combo_index >= 0:
-                blocker = QtCore.QSignalBlocker(self.command_panel.algo_combo)
-                self.command_panel.algo_combo.setCurrentIndex(combo_index)
-                del blocker
-            self._refresh_control_status()
+            self._apply_local_algorithm_selection(raw_command[4:].strip())
             return
         if normalized.startswith("SET REF "):
             try:
                 ref_value = float(normalized.split()[-1])
             except (TypeError, ValueError):
                 return
-            blocker = QtCore.QSignalBlocker(self.command_panel.ref_spin)
-            self.command_panel.ref_spin.setValue(ref_value)
-            del blocker
+            self.command_panel.set_reference_value(ref_value, sync_ladrc=self._is_ladrc_algo_selected())
+            if self._is_ladrc_algo_selected():
+                self._ladrc_sim.set_expect(ref_value)
             self._latest_telemetry.ref = ref_value
             self._refresh_control_status()
             return
+        if normalized.startswith("SET "):
+            if self.command_panel.apply_current_algorithm_set_command(raw_command):
+                return
         if normalized == "GET STATUS" and self._is_simulated_upload_active():
             self._emit_simulated_status_snapshot()
 
     def _on_algorithm_selected(self, algo_name: str):
         self._latest_telemetry.algo_id = self._algo_id_from_name(algo_name)
+        self._latest_telemetry.channel_labels = {}
+        self.plot_panel.set_algorithm_channel_labels({})
+        if str(algo_name).strip().upper() == "LADRC":
+            self._sync_ladrc_panel_to_session()
+            self.command_panel.set_reference_value(
+                float(self.command_panel.current_ladrc_config().get("expect", self._latest_telemetry.ref)),
+                sync_ladrc=True,
+            )
+            self._refresh_remote_status_polling(request_now=False)
+        else:
+            self._set_ladrc_data_interaction_enabled(False, request_now=False)
+            self._refresh_remote_status_polling(request_now=False)
         self._refresh_control_status()
+        self._sync_toolbar_state()
 
     def _on_reference_changed(self, value: float):
         self._latest_telemetry.ref = float(value)
+        if self._is_ladrc_algo_selected():
+            self.command_panel.set_reference_value(float(value), sync_ladrc=True)
+            self._ladrc_sim.set_expect(float(value))
         self._refresh_control_status()
 
     def _apply_sim_period_ms(self, period_ms: int, show_message: bool = True):
@@ -2384,14 +3011,66 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_sim_period_changed(self, period_ms: int):
         self._apply_sim_period_ms(period_ms, show_message=True)
 
+    def _apply_disturbance_mode_to_simulators(self):
+        for simulator in self._simulators.values():
+            simulator.set_disturbance_mode(self._disturbance_mode_key)
+        for generator in self._disturbance_generators.values():
+            generator.set_disturbance_mode(self._disturbance_mode_key)
+        self._ladrc_sim.set_disturbance_mode(self._disturbance_mode_key)
+
+    def _on_disturbance_mode_changed(self, mode_key: str):
+        self._disturbance_mode_key = str(mode_key or "sine").strip().lower() or "sine"
+        self._apply_disturbance_mode_to_simulators()
+        self._ensure_disturbance_plot_channels_visible()
+        mode_text = {
+            "sine": "正弦扰动",
+            "step": "阶跃扰动",
+            "drift": "慢变偏置",
+        }.get(self._disturbance_mode_key, "正弦扰动")
+        self.log_panel.append_line(f"[仿真] 环境扰动模式已切换为 {mode_text}。")
+        self.statusBar().showMessage(f"环境扰动模式已切换为 {mode_text}。", 2500)
+
+    def _apply_disturbance_params_to_simulators(self):
+        for simulator in self._simulators.values():
+            simulator.set_disturbance_params(self._disturbance_params)
+        for generator in self._disturbance_generators.values():
+            generator.set_disturbance_params(self._disturbance_params)
+        self._ladrc_sim.set_disturbance_params(self._disturbance_params)
+
+    def _on_disturbance_params_changed(self, amplitude_gain: float, frequency_gain: float, bias: float):
+        self._disturbance_params = DisturbanceParams(
+            amplitude_gain=max(0.0, float(amplitude_gain)),
+            frequency_gain=max(0.0, float(frequency_gain)),
+            bias=float(bias),
+        )
+        self._apply_disturbance_params_to_simulators()
+        self._ensure_disturbance_plot_channels_visible()
+        self.log_panel.append_line(
+            "[仿真] 环境扰动参数已更新: "
+            f"幅值倍率={self._disturbance_params.amplitude_gain:.2f}, "
+            f"频率倍率={self._disturbance_params.frequency_gain:.2f}, "
+            f"偏置={self._disturbance_params.bias:.3f}"
+        )
+        self.statusBar().showMessage(
+            "环境扰动参数已更新，新的扰动配置将直接参与本地仿真。",
+            2500,
+        )
+
     def _on_disturbance_level_changed(self, level_key: str, scale: float):
         self._disturbance_level_key = level_key
         self._disturbance_scale = float(scale)
         for simulator in self._simulators.values():
-            simulator.set_disturbance_scale(self._disturbance_scale)
+            simulator.set_disturbance_level(self._disturbance_level_key, self._disturbance_scale)
+        for generator in self._disturbance_generators.values():
+            generator.set_disturbance_level(self._disturbance_level_key, self._disturbance_scale)
+        self._ladrc_sim.set_disturbance_level(self._disturbance_level_key, self._disturbance_scale)
+        self._ensure_disturbance_plot_channels_visible()
         self.status_panel.set_disturbance_level(DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label()))
+        self.log_panel.append_line(
+            f"[仿真] 环境扰动等级已切换为 {DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label())}，将直接参与本地仿真。"
+        )
         self.statusBar().showMessage(
-            f"环境扰动等级已切换为 {DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label())}",
+            f"环境扰动等级已切换为 {DISTURBANCE_LEVEL_TEXT.get(level_key, self.command_panel.current_disturbance_label())}，将直接参与本地仿真。",
             2500,
         )
 
@@ -2404,11 +3083,19 @@ class MainWindow(QtWidgets.QMainWindow):
     @staticmethod
     def _format_console_float(value: float, decimals: int = 3) -> str:
         try:
-            return f"{float(value):.{decimals}f}"
+            numeric = float(value)
         except (TypeError, ValueError):
             return "0.000"
+        if not math.isfinite(numeric):
+            return "0.000"
+        return f"{numeric:.{decimals}f}"
 
     def _format_telemetry_console_line(self, telemetry: Telemetry) -> str:
+        algo_label = (
+            self.command_panel.current_algorithm_label()
+            if self.command_panel.is_custom_algorithm()
+            else ALGO_NAME.get(int(telemetry.algo_id), f"ALG_{telemetry.algo_id}")
+        )
         parts = [
             f"timestamp={int(telemetry.timestamp_ms)}",
             f"roll={self._format_console_float(telemetry.roll, 2)}",
@@ -2417,11 +3104,18 @@ class MainWindow(QtWidgets.QMainWindow):
             f"u_cmd={self._format_console_float(telemetry.u_cmd, 3)}",
             f"ref={self._format_console_float(telemetry.ref, 3)}",
             f"feedback={self._format_console_float(telemetry.feedback, 3)}",
-            f"algo={ALGO_NAME.get(int(telemetry.algo_id), f'ALG_{telemetry.algo_id}')}",
+            f"algo={algo_label}",
             f"run_state={int(telemetry.run_state)}",
         ]
         if getattr(telemetry, "extra", None):
-            for key in sorted(telemetry.extra.keys()):
+            preferred_keys = ["sim_mode", "v1", "v2", "z1", "z2", "z3", "r", "h", "w0", "wc", "b0", "init"]
+            ordered_keys = [key for key in preferred_keys if key in telemetry.extra]
+            ordered_keys.extend(sorted(key for key in telemetry.extra.keys() if key not in ordered_keys))
+            for key in ordered_keys:
+                if key == "sim_mode":
+                    mode_value = int(round(float(telemetry.extra[key])))
+                    parts.append(f"sim_mode={LADRC_SIM_MODE_TEXT.get(mode_value, mode_value)}")
+                    continue
                 parts.append(f"{key}={self._format_console_float(telemetry.extra[key], 3)}")
         return ",".join(parts)
 
@@ -2435,32 +3129,83 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _log_outbound_command(self, command: str):
         prefix = "[上位机->下位机][命令]" if self._is_serial_connected() else "[上位机命令][未连接]"
-        self.log_panel.append_line(f"{prefix} {command}")
+        self.log_panel.append_line(f"{prefix} {command}", direction=LogPanel.DIRECTION_TX)
 
     def _log_outbound_feedback(self, feedback: SimFeedback):
         if not self._is_serial_connected():
             return
         mode = "二进制" if self.serial_panel.binary_cb.isChecked() else "文本"
         self.log_panel.append_line(
-            f"[上位机->下位机][仿真反馈/{mode}] {self._format_feedback_console_line(feedback)}"
+            f"[上位机->下位机][仿真反馈/{mode}] {self._format_feedback_console_line(feedback)}",
+            direction=LogPanel.DIRECTION_TX,
         )
 
     def _log_inbound_telemetry(self, telemetry: Telemetry):
-        self.log_panel.append_line(f"[下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}")
+        self.log_panel.append_line(
+            f"[下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}",
+            direction=LogPanel.DIRECTION_RX,
+        )
 
     def _log_simulated_inbound_telemetry(self, telemetry: Telemetry):
-        self.log_panel.append_line(f"[模拟下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}")
+        self.log_panel.append_line(
+            f"[模拟下位机->上位机][遥测] {self._format_telemetry_console_line(telemetry)}",
+            direction=LogPanel.DIRECTION_RX,
+        )
 
     def _send_toolbar_command(self, command: str):
-        self._apply_local_command_side_effects(command)
-        self._log_outbound_command(command)
-        self.send_line_signal.emit(command)
+        self._dispatch_serial_command(command)
 
     def _current_model_type(self) -> str:
         return self.model_panel.current_model_type()
 
     def _current_feedback(self) -> SimFeedback:
         return self._feedback_by_model[self._current_model_type()]
+
+    def _advance_environment_disturbance(self, model_type: str, dt: float | None = None) -> float:
+        if model_type not in self._disturbance_generators:
+            return 0.0
+        if dt is None:
+            now = time.monotonic()
+            last = self._last_disturbance_preview_monotonic.get(model_type, now)
+            dt = max(1e-3, now - last)
+            self._last_disturbance_preview_monotonic[model_type] = now
+        else:
+            dt = max(1e-3, float(dt))
+            self._last_disturbance_preview_monotonic[model_type] = time.monotonic()
+        return float(self._disturbance_generators[model_type].sample(dt))
+
+    def _current_environment_disturbance(self, model_type: str) -> float:
+        generator = self._disturbance_generators.get(model_type)
+        if generator is None:
+            return 0.0
+        return float(generator.snapshot())
+
+    def _should_drive_environment_disturbance_preview(self) -> bool:
+        if self._simulation_running or self._is_simulated_upload_active():
+            return False
+        if self._disturbance_level_key == "off":
+            return False
+        return bool(self._latest_telemetry.run_state > 0 or self._ladrc_data_interaction_enabled)
+
+    def _update_environment_disturbance_preview(self):
+        if not self._should_drive_environment_disturbance_preview():
+            return
+        model_type = self._current_model_type()
+        disturbance = self._advance_environment_disturbance(model_type)
+        current_feedback = self._current_feedback()
+        now_s = time.monotonic() - self._start_monotonic
+        self.plot_panel.append(
+            now_s,
+            {
+                "disturbance_sim": disturbance,
+                "disturbance_remote": float("nan"),
+            },
+        )
+        self.status_panel.update_vertical_state(
+            current_feedback.depth,
+            current_feedback.depth_rate,
+            disturbance,
+        )
 
     def _normalize_feedback(self, model_type: str, feedback: SimFeedback) -> SimFeedback:
         if model_type != "aircraft":
@@ -2482,14 +3227,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.serial_panel.set_ports(ports)
 
     def _send_command(self, command: str):
-        self._apply_local_command_side_effects(command)
-        self._log_outbound_command(command)
-        self.send_line_signal.emit(command)
+        self._dispatch_serial_command(command)
 
     def _send_preset_command(self, command: str):
-        self._apply_local_command_side_effects(command)
-        self._log_outbound_command(command)
-        self.send_line_signal.emit(command)
+        self._dispatch_serial_command(command)
 
     def _set_record_path_text(self, text: str):
         metrics = self.record_path_label.fontMetrics()
@@ -2524,9 +3265,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self._sync_toolbar_state()
 
     def _on_connection_changed(self, connected: bool, desc: str):
+        self._remote_ladrc_transport_active = False
+        self._awaiting_remote_status = False
+        self._last_remote_status_request_ms = 0
+        self._last_rx_ms = 0
+        self.command_panel.clear_ladrc_sync_cache()
         if not connected:
             self._legacy_binary_feedback_warned = False
         self.serial_panel.set_connected(connected, desc)
+        self._refresh_remote_status_polling(request_now=connected)
         self._sync_toolbar_state()
         state = "已连接" if connected else "已断开"
         suffix = f" {desc}" if desc else ""
@@ -2539,7 +3286,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"串口状态: {state}{suffix}", 3000)
 
     def _on_line(self, line: str):
-        self.log_panel.append_line(f"[下位机->上位机][文本] {line}")
+        self.log_panel.append_line(f"[下位机->上位机][文本] {line}", direction=LogPanel.DIRECTION_RX)
 
     def _append_log_error(self, text: str):
         self.log_panel.append_line(f"[错误] {text}")
@@ -2560,6 +3307,11 @@ class MainWindow(QtWidgets.QMainWindow):
         current_feedback = self._feedback_by_model[model_type]
         self._latest_feedback = current_feedback
         self._reset_simulated_upload_state()
+        environment_disturbance = (
+            float(current_feedback.disturbance)
+            if self._simulation_running
+            else self._current_environment_disturbance(model_type)
+        )
         self.status_panel.set_model_context(model_type)
         self.status_panel.set_disturbance_level(
             DISTURBANCE_LEVEL_TEXT.get(self._disturbance_level_key, self.command_panel.current_disturbance_label())
@@ -2567,9 +3319,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.status_panel.update_vertical_state(
             current_feedback.depth,
             current_feedback.depth_rate,
-            current_feedback.disturbance,
+            environment_disturbance,
         )
         self.plot_panel.set_model_context(model_type)
+        self.plot_panel.set_algorithm_channel_labels(getattr(self._latest_telemetry, "channel_labels", {}))
+        self._ensure_disturbance_plot_channels_visible()
         self.plot_panel.clear_model_series()
         self.model_panel.update_depth(current_feedback.depth)
         self._update_3d_status_summary()
@@ -2578,6 +3332,18 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statusBar().showMessage(f"已切换到 {MODEL_NAME.get(model_type, model_type)}", 2500)
 
     def _apply_telemetry(self, telemetry: Telemetry, simulated: bool = False):
+        model_type = self._current_model_type()
+        if not simulated:
+            self._awaiting_remote_status = False
+        ladrc_feedback_synced = telemetry.algo_id == 1 and any(key in telemetry.extra for key in ("v1", "z1", "sim_mode"))
+        if ladrc_feedback_synced:
+            self._select_ladrc_algorithm()
+            if not simulated:
+                self._remote_ladrc_transport_active = self._is_serial_connected()
+            self._sync_ladrc_command_cache_from_telemetry(telemetry)
+            self._sync_feedback_store_from_telemetry(model_type, telemetry)
+        elif not simulated and telemetry.algo_id != 1:
+            self._remote_ladrc_transport_active = False
         previous_feedback = self._latest_telemetry.feedback
         feedback_missing = bool(getattr(telemetry, "extra", {}).pop("_feedback_missing", 0.0))
         if feedback_missing:
@@ -2588,6 +3354,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 )
                 self._legacy_binary_feedback_warned = True
         self._latest_telemetry = telemetry
+        self.plot_panel.set_algorithm_channel_labels(getattr(telemetry, "channel_labels", {}))
         if simulated:
             self._simulated_upload_rx_frames += 1
             self._last_rx_ms = int(time.time() * 1000)
@@ -2598,27 +3365,47 @@ class MainWindow(QtWidgets.QMainWindow):
             self._log_inbound_telemetry(telemetry)
 
         now_s = time.monotonic() - self._start_monotonic
-        algo_name = ALGO_NAME.get(telemetry.algo_id, f"ALG_{telemetry.algo_id}")
-        self.status_panel.update_control(
-            algo_name,
-            telemetry.run_state,
-            telemetry.ref,
-            telemetry.feedback,
-            telemetry.u_cmd,
-        )
-        self.plot_panel.append(
-            now_s,
-            {
-                "ref": telemetry.ref,
-                "feedback": telemetry.feedback,
-                "u_cmd": telemetry.u_cmd,
-                "roll": telemetry.roll,
-                "pitch": telemetry.pitch,
-                "yaw": telemetry.yaw,
-            },
-        )
-
+        self._refresh_control_status()
+        self._sync_toolbar_state()
         current_feedback = self._current_feedback()
+        environment_disturbance = (
+            float(current_feedback.disturbance)
+            if simulated or self._simulation_running
+            else self._current_environment_disturbance(model_type)
+        )
+        plot_values = {
+            "ref": telemetry.ref,
+            "feedback": telemetry.feedback,
+            "u_cmd": telemetry.u_cmd,
+            "roll": telemetry.roll,
+            "pitch": telemetry.pitch,
+            "yaw": telemetry.yaw,
+            "disturbance_sim": environment_disturbance,
+            "disturbance_remote": (
+                float(telemetry.extra.get("disturbance", float("nan")))
+                if not simulated
+                else float("nan")
+            ),
+            **{
+                key: float(value)
+                for key, value in telemetry.extra.items()
+                if not str(key).startswith("_")
+            },
+        }
+        if ladrc_feedback_synced or simulated:
+            plot_values.update(
+                {
+                    "vertical": current_feedback.depth,
+                    "vertical_rate": current_feedback.depth_rate,
+                    "disturbance_sim": environment_disturbance,
+                }
+            )
+            self.status_panel.update_vertical_state(
+                current_feedback.depth,
+                current_feedback.depth_rate,
+                environment_disturbance,
+            )
+        self.plot_panel.append(now_s, plot_values)
         self.model_panel.update_pose(
             telemetry.roll,
             telemetry.pitch,
@@ -2644,6 +3431,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._simulate_device_upload = enabled
         if previous == enabled:
             return
+        self._sync_ladrc_panel_to_session()
         self._reset_simulated_upload_state()
         if self._simulate_device_upload:
             self.log_panel.append_line("[模拟下位机] 已启用模拟上报模式，未连接串口时将本地生成遥测。")
@@ -2669,30 +3457,93 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         if algo_name == "LADRC":
             return ladrc_gains.get(model_type, ladrc_gains["rov"])
+        if algo_name == "PID":
+            return self._current_pid_gains()
         return pid_gains.get(model_type, pid_gains["rov"])
 
     def _generate_simulated_pose(self, model_type: str, u_cmd: float, feedback: SimFeedback, now_s: float, dt: float):
+        visual_u = max(-3.0, min(3.0, float(u_cmd)))
         yaw_bias = {"rov": 4.0, "aircraft": 10.0, "generic": 6.0}.get(model_type, 4.0)
         yaw_gain = {"rov": 12.0, "aircraft": 24.0, "generic": 16.0}.get(model_type, 12.0)
-        self._simulated_upload_yaw = (self._simulated_upload_yaw + (yaw_bias + yaw_gain * u_cmd) * dt) % 360.0
+        self._simulated_upload_yaw = (self._simulated_upload_yaw + (yaw_bias + yaw_gain * visual_u) * dt) % 360.0
 
         if model_type == "aircraft":
-            roll = max(-28.0, min(28.0, math.sin(now_s * 0.92) * 6.0 + u_cmd * 5.5))
+            roll = max(-28.0, min(28.0, math.sin(now_s * 0.92) * 6.0 + visual_u * 5.5))
             pitch = max(-20.0, min(20.0, math.cos(now_s * 0.66) * 4.0 + feedback.depth_rate * 42.0))
         elif model_type == "generic":
-            roll = max(-16.0, min(16.0, math.sin(now_s * 0.75) * 4.0 + u_cmd * 3.2))
+            roll = max(-16.0, min(16.0, math.sin(now_s * 0.75) * 4.0 + visual_u * 3.2))
             pitch = max(-12.0, min(12.0, math.cos(now_s * 0.58) * 3.0 + feedback.depth_rate * 28.0))
         else:
-            roll = max(-12.0, min(12.0, math.sin(now_s * 0.70) * 3.0 + u_cmd * 2.4))
+            roll = max(-12.0, min(12.0, math.sin(now_s * 0.70) * 3.0 + visual_u * 2.4))
             pitch = max(-10.0, min(10.0, math.cos(now_s * 0.54) * 2.8 + feedback.depth_rate * 22.0))
         return roll, pitch, self._simulated_upload_yaw
 
-    def _generate_simulated_upload_telemetry(self, dt: float) -> Telemetry:
+    def _update_ladrc_feedback_store(self, model_type: str, feedback_value: float, dt: float, now_ms: int, disturbance: float):
+        previous_feedback = self._feedback_by_model[model_type]
+        depth_rate = 0.0
+        if dt > 1e-6:
+            depth_rate = (float(feedback_value) - float(previous_feedback.depth)) / dt
+        feedback = SimFeedback(
+            timestamp_ms=now_ms,
+            depth=float(feedback_value),
+            depth_rate=float(depth_rate),
+            disturbance=float(disturbance),
+        )
+        self._feedback_by_model[model_type] = feedback
+        self._latest_feedback = feedback
+        return feedback
+
+    def _sync_feedback_store_from_telemetry(self, model_type: str, telemetry: Telemetry):
+        previous_feedback = self._feedback_by_model[model_type]
+        dt = 0.0
+        if previous_feedback.timestamp_ms > 0 and telemetry.timestamp_ms > previous_feedback.timestamp_ms:
+            dt = (telemetry.timestamp_ms - previous_feedback.timestamp_ms) / 1000.0
+        return self._update_ladrc_feedback_store(
+            model_type,
+            float(telemetry.feedback),
+            dt if dt > 1e-6 else max(1e-3, self._sim_period_ms / 1000.0),
+            int(telemetry.timestamp_ms),
+            previous_feedback.disturbance,
+        )
+
+    def _generate_simulated_upload_telemetry(self, dt: float, advance: bool = True) -> Telemetry:
         model_type = self._current_model_type()
         feedback = self._current_feedback()
         now_s = time.monotonic() - self._start_monotonic
         now_ms = int(time.time() * 1000)
-        algo_name = str(self.command_panel.algo_combo.currentData() or "PID").strip().upper()
+        algo_name = self.command_panel.current_algorithm_key().strip().upper() or "PID"
+        if algo_name == "LADRC":
+            self._ladrc_sim.apply_params(self._current_ladrc_params())
+            snapshot = self._ladrc_sim.step() if advance else self._ladrc_sim.snapshot()
+            ref = float(snapshot.get("ref", 0.0))
+            feedback_value = float(snapshot.get("feedback", 0.0))
+            u_cmd = float(snapshot.get("u_cmd", 0.0))
+            feedback = self._update_ladrc_feedback_store(
+                model_type,
+                feedback_value,
+                dt,
+                now_ms,
+                float(snapshot.get("disturbance", 0.0)),
+            )
+            roll, pitch, yaw = self._generate_simulated_pose(model_type, u_cmd, feedback, now_s, dt)
+            telemetry = Telemetry(
+                timestamp_ms=now_ms,
+                roll=roll,
+                pitch=pitch,
+                yaw=yaw,
+                u_cmd=u_cmd,
+                ref=ref,
+                feedback=feedback_value,
+                algo_id=self._algo_id_from_name(algo_name),
+                run_state=int(snapshot.get("run_state", self._ladrc_sim.run_state())),
+            )
+            for key, value in snapshot.items():
+                if key in {"ref", "feedback", "u_cmd", "run_state"}:
+                    continue
+                telemetry.extra[key] = float(value)
+            telemetry.channel_labels = {}
+            return telemetry
+
         ref = float(self.command_panel.ref_spin.value())
         error = ref - float(feedback.depth)
 
@@ -2708,8 +3559,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 u_cmd = g1 * error + g3 * self._simulated_upload_integral - g2 * float(feedback.depth_rate)
             u_cmd = max(-3.0, min(3.0, u_cmd))
 
+        raw_feedback = self._simulators[model_type].step(dt, u_cmd)
+        feedback = self._normalize_feedback(model_type, raw_feedback)
+        self._feedback_by_model[model_type] = feedback
+        self._latest_feedback = feedback
         roll, pitch, yaw = self._generate_simulated_pose(model_type, u_cmd, feedback, now_s, dt)
-        return Telemetry(
+        telemetry = Telemetry(
             timestamp_ms=now_ms,
             roll=roll,
             pitch=pitch,
@@ -2720,11 +3575,93 @@ class MainWindow(QtWidgets.QMainWindow):
             algo_id=self._algo_id_from_name(algo_name),
             run_state=1 if self._simulation_running else 0,
         )
+        telemetry.extra.update(
+            {
+                "vertical": float(feedback.depth),
+                "vertical_rate": float(feedback.depth_rate),
+                "disturbance": float(feedback.disturbance),
+            }
+        )
+        telemetry.channel_labels = {}
+        return telemetry
+
+    def _apply_local_ladrc_snapshot(self, snapshot: dict, dt: float):
+        model_type = self._current_model_type()
+        now_ms = int(time.time() * 1000)
+        now_s = time.monotonic() - self._start_monotonic
+        ref_value = float(snapshot.get("ref", 0.0))
+        feedback_value = float(snapshot.get("feedback", 0.0))
+        u_cmd = float(snapshot.get("u_cmd", 0.0))
+        disturbance = float(snapshot.get("disturbance", 0.0))
+        feedback = self._update_ladrc_feedback_store(
+            model_type,
+            feedback_value,
+            max(1e-3, float(dt)),
+            now_ms,
+            disturbance,
+        )
+        self._latest_feedback = feedback
+        self._latest_telemetry.timestamp_ms = now_ms
+        self._latest_telemetry.algo_id = self._algo_id_from_name("LADRC")
+        self._latest_telemetry.run_state = int(snapshot.get("run_state", self._ladrc_sim.run_state()))
+        self._latest_telemetry.ref = ref_value
+        self._latest_telemetry.feedback = feedback_value
+        self._latest_telemetry.u_cmd = u_cmd
+        self._latest_telemetry.extra = {
+            key: float(value)
+            for key, value in snapshot.items()
+            if key not in {"ref", "feedback", "u_cmd", "run_state"}
+        }
+        self._latest_telemetry.channel_labels = {}
+        self.plot_panel.set_algorithm_channel_labels({})
+        self._refresh_control_status()
+        self._sync_toolbar_state()
+        self.plot_panel.append(
+            now_s,
+            {
+                "ref": ref_value,
+                "feedback": feedback_value,
+                "u_cmd": u_cmd,
+                "roll": self._latest_telemetry.roll,
+                "pitch": self._latest_telemetry.pitch,
+                "yaw": self._latest_telemetry.yaw,
+                "vertical": feedback.depth,
+                "vertical_rate": feedback.depth_rate,
+                "disturbance_sim": feedback.disturbance,
+                "disturbance_remote": float("nan"),
+                **self._latest_telemetry.extra,
+            },
+        )
+        self.status_panel.update_vertical_state(
+            feedback.depth,
+            feedback.depth_rate,
+            feedback.disturbance,
+        )
+        self.model_panel.update_depth(feedback.depth)
 
     def _emit_simulated_status_snapshot(self):
-        telemetry = self._generate_simulated_upload_telemetry(max(1e-3, self._sim_period_ms / 1000.0))
-        telemetry.run_state = 1 if self._simulation_running else 0
+        telemetry = self._generate_simulated_upload_telemetry(max(1e-3, self._sim_period_ms / 1000.0), advance=False)
+        if not self._is_ladrc_algo_selected():
+            telemetry.run_state = 1 if self._simulation_running else 0
         self._apply_telemetry(telemetry, simulated=True)
+
+    def _record_simulation_row(self, model_type: str, feedback: SimFeedback):
+        if not self.recorder.active:
+            return
+        row = telemetry_to_record_dict(self._latest_telemetry)
+        row.update(
+            {
+                "pc_time_ms": int(time.time() * 1000),
+                "sim_model": model_type,
+                "sim_vertical": feedback.depth,
+                "sim_vertical_rate": feedback.depth_rate,
+                "sim_disturbance": feedback.disturbance,
+                "sim_disturbance_level": self._disturbance_level_key,
+                "sim_disturbance_mode": self._disturbance_mode_key,
+                "sim_disturbance_scale": self._disturbance_scale,
+            }
+        )
+        self.recorder.write_row(row)
 
     def _on_sim_tick(self):
         if not self._simulation_running:
@@ -2735,8 +3672,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         model_type = self._current_model_type()
         if self._is_simulated_upload_active():
-            telemetry = self._generate_simulated_upload_telemetry(dt)
+            telemetry = self._generate_simulated_upload_telemetry(dt, advance=True)
             self._apply_telemetry(telemetry, simulated=True)
+            if self._is_local_ladrc_sim_active():
+                self._record_simulation_row(model_type, self._current_feedback())
+                return
+        elif self._is_local_ladrc_sim_active():
+            self._apply_local_ladrc_snapshot(self._ladrc_sim.step(), dt)
+            self._record_simulation_row(model_type, self._current_feedback())
+            return
+        if self._should_poll_remote_ladrc_status():
+            self._record_simulation_row(model_type, self._current_feedback())
+            return
         raw_feedback = self._simulators[model_type].step(dt, self._latest_telemetry.u_cmd)
         feedback = self._normalize_feedback(model_type, raw_feedback)
         self._feedback_by_model[model_type] = feedback
@@ -2748,7 +3695,8 @@ class MainWindow(QtWidgets.QMainWindow):
             {
                 "vertical": feedback.depth,
                 "vertical_rate": feedback.depth_rate,
-                "disturbance": feedback.disturbance,
+                "disturbance_sim": feedback.disturbance,
+                "disturbance_remote": float("nan"),
             },
         )
         self.status_panel.update_vertical_state(
@@ -2764,26 +3712,24 @@ class MainWindow(QtWidgets.QMainWindow):
             self.send_feedback_signal.emit(feedback)
             self._last_serial_tx = now
 
-        if self.recorder.active:
-            row = telemetry_to_record_dict(self._latest_telemetry)
-            row.update(
-                {
-                    "pc_time_ms": int(time.time() * 1000),
-                    "sim_model": model_type,
-                    "sim_vertical": feedback.depth,
-                    "sim_vertical_rate": feedback.depth_rate,
-                    "sim_disturbance": feedback.disturbance,
-                    "sim_disturbance_level": self._disturbance_level_key,
-                    "sim_disturbance_scale": self._disturbance_scale,
-                }
-            )
-            self.recorder.write_row(row)
+        self._record_simulation_row(model_type, feedback)
 
     def _update_timeout_state(self):
+        self._update_environment_disturbance_preview()
+        now_ms = int(time.time() * 1000)
+        if self._should_poll_remote_ladrc_status():
+            if self._last_rx_ms > 0:
+                timeout = (now_ms - self._last_rx_ms) > self.cfg.communication_timeout_ms
+            elif self._last_remote_status_request_ms > 0:
+                timeout = (now_ms - self._last_remote_status_request_ms) > self.cfg.communication_timeout_ms
+            else:
+                timeout = False
+            self.status_panel.set_timeout(timeout)
+            return
         if self._last_rx_ms <= 0:
             self.status_panel.set_timeout(False)
             return
-        timeout = (int(time.time() * 1000) - self._last_rx_ms) > self.cfg.communication_timeout_ms
+        timeout = (now_ms - self._last_rx_ms) > self.cfg.communication_timeout_ms
         self.status_panel.set_timeout(timeout)
 
 
@@ -2806,16 +3752,12 @@ def main() -> int:
         icon = QtGui.QIcon(str(APP_ICON_PATH))
         if not icon.isNull():
             app.setWindowIcon(icon)
-    splash = StartupSplash(DEFAULT_CONFIG)
-    splash.show_centered()
-    splash.set_stage_info("正在加载主界面", "正在准备窗口资源与启动动画", 18)
-    app.processEvents()
-
-    splash.set_stage_info("正在初始化控制工作台", "正在构建设备、控制、通道与波形页面", 42)
     win = MainWindow()
-    splash.set_stage_info("正在恢复主题与工作台", "正在应用海洋蓝调主题与上次布局设置", 78)
-    app.processEvents()
-
-    QtCore.QTimer.singleShot(160, lambda: splash.finish_with(win))
+    if _should_start_maximized(win):
+        win.showMaximized()
+    else:
+        win.show()
+    win.raise_()
+    win.activateWindow()
     QtCore.QTimer.singleShot(620, win._show_welcome_page)
     return app.exec_()

@@ -5,7 +5,7 @@
 			"type": "mrs-debugger",
 			"request": "launch",
 			"name": "MAIN_SDK_CH32V307_V1",
-			"cwd": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1",
+			"cwd": "g:\\ladrc_board\\MAIN_SDK_CH32V307_V1",
 			"openOCDCfg": {
 				"useLocalOpenOCD": true,
 				"executable": "d:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
@@ -39,8 +39,8 @@
 					"additionalCommands": []
 				},
 				"loadedFiles": {
-					"executableFile": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
-					"symbolFile": "e:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
+					"executableFile": "g:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
+					"symbolFile": "g:\\ladrc_board\\MAIN_SDK_CH32V307_V1\\obj\\MAIN_SDK_CH32V307_V1.elf",
 					"executableFileOffset": 0,
 					"symbolFileOffset": 0
 				},

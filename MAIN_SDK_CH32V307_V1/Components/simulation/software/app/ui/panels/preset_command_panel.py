@@ -29,15 +29,16 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         {"name": "PID 微分 KD", "command": "SET KD", "type": TYPE_FLOAT, "value": 0.05},
     ]
     DEFAULT_PRESETS = [
-        {"name": "状态查询", "command": "GET STATUS", "type": TYPE_NONE, "value": ""},
-        {"name": "预设参数", "command": "ALG PID", "type": TYPE_NONE, "value": ""},
-        {"name": "预设参数", "command": "SET KP", "type": TYPE_FLOAT, "value": 1.20},
-        {"name": "预设参数", "command": "SET KI", "type": TYPE_FLOAT, "value": 0.30},
-        {"name": "预设参数", "command": "SET KD", "type": TYPE_FLOAT, "value": 0.05},
+        {"name": "状态查询", "command": "#stat:1", "type": TYPE_NONE, "value": ""},
+        {"name": "切换 PID", "command": "#alg:PID", "type": TYPE_NONE, "value": ""},
+        {"name": "PID 比例 KP", "command": "#kp", "type": TYPE_FLOAT, "value": 1.20},
+        {"name": "PID 积分 KI", "command": "#ki", "type": TYPE_FLOAT, "value": 0.30},
+        {"name": "PID 微分 KD", "command": "#kd", "type": TYPE_FLOAT, "value": 0.05},
     ]
 
     def __init__(self, parent=None):
         super().__init__("命令预设", parent)
+        self.setObjectName("panelSubGroup")
         self._loading_preset = False
         self._presets = [dict(item) for item in self.DEFAULT_PRESETS]
         self._build()
@@ -45,10 +46,10 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
 
     def _build(self):
         layout = QtWidgets.QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(8)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.setSpacing(5)
 
-        hint = QtWidgets.QLabel("默认提供 5 个预设命令，也可以通过下拉框选择、手动编辑并继续添加新的选项。")
+        hint = QtWidgets.QLabel("管理常用命令并快速发送。")
         hint.setObjectName("statusHint")
         hint.setWordWrap(True)
         layout.addWidget(hint)
@@ -56,26 +57,36 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         selector_label = QtWidgets.QLabel("预设选项")
         selector_label.setObjectName("statusHint")
         self.preset_combo = NoWheelComboBox()
-        self.preset_combo.setMinimumContentsLength(10)
+        self.preset_combo.setMinimumContentsLength(6)
         self.preset_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.preset_combo.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
         self.add_btn = QtWidgets.QPushButton("添加选项")
         self.save_btn = QtWidgets.QPushButton("保存当前")
 
+        selector_row = QtWidgets.QHBoxLayout()
+        selector_row.setSpacing(4)
+        selector_row.addWidget(selector_label)
+        selector_row.addWidget(self.preset_combo, 1)
+
         selector_actions = QtWidgets.QHBoxLayout()
-        selector_actions.setSpacing(8)
+        selector_actions.setSpacing(4)
+        selector_actions.addStretch(1)
         selector_actions.addWidget(self.add_btn)
         selector_actions.addWidget(self.save_btn)
-        selector_actions.addStretch(1)
 
         name_label = QtWidgets.QLabel("选项名称")
         name_label.setObjectName("statusHint")
         self.name_edit = QtWidgets.QLineEdit()
         self.name_edit.setPlaceholderText("例如：高度查询")
+        self.name_edit.setMinimumWidth(0)
+        self.name_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         command_label = QtWidgets.QLabel("命令名称")
         command_label.setObjectName("statusHint")
         self.command_edit = QtWidgets.QLineEdit()
         self.command_edit.setPlaceholderText("例如：GET STATUS")
+        self.command_edit.setMinimumWidth(0)
+        self.command_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         type_label = QtWidgets.QLabel("参数类型")
         type_label.setObjectName("statusHint")
@@ -84,50 +95,72 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         self.type_combo.addItem("整数", self.TYPE_INT)
         self.type_combo.addItem("浮点", self.TYPE_FLOAT)
         self.type_combo.addItem("文本", self.TYPE_TEXT)
+        self.type_combo.setMinimumWidth(96)
+        self.type_combo.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         value_label = QtWidgets.QLabel("参数值")
         value_label.setObjectName("statusHint")
         self.value_stack = QtWidgets.QStackedWidget()
         self.value_stack.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.value_stack.setMinimumWidth(0)
 
         none_label = QtWidgets.QLabel("当前模式无需参数")
         none_label.setAlignment(QtCore.Qt.AlignCenter)
+        none_label.setObjectName("statusHint")
 
         self.int_spin = QtWidgets.QSpinBox()
         self.int_spin.setRange(-999999, 999999)
+        self.int_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.int_spin.setMinimumWidth(0)
+        self.int_spin.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         self.float_spin = QtWidgets.QDoubleSpinBox()
         self.float_spin.setRange(-999999.0, 999999.0)
         self.float_spin.setDecimals(3)
         self.float_spin.setSingleStep(0.1)
+        self.float_spin.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
+        self.float_spin.setMinimumWidth(0)
+        self.float_spin.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         self.text_edit = QtWidgets.QLineEdit()
         self.text_edit.setPlaceholderText("输入文本参数")
+        self.text_edit.setMinimumWidth(0)
+        self.text_edit.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
 
         self.value_stack.addWidget(none_label)
         self.value_stack.addWidget(self.int_spin)
         self.value_stack.addWidget(self.float_spin)
         self.value_stack.addWidget(self.text_edit)
 
+        editor_grid = QtWidgets.QGridLayout()
+        editor_grid.setHorizontalSpacing(4)
+        editor_grid.setVerticalSpacing(4)
+        editor_grid.addWidget(name_label, 0, 0)
+        editor_grid.addWidget(self.name_edit, 0, 1)
+        editor_grid.addWidget(type_label, 0, 2)
+        editor_grid.addWidget(self.type_combo, 0, 3)
+        editor_grid.addWidget(command_label, 1, 0)
+        editor_grid.addWidget(self.command_edit, 1, 1, 1, 3)
+        editor_grid.addWidget(value_label, 2, 0)
+        editor_grid.addWidget(self.value_stack, 2, 1, 1, 3)
+        editor_grid.setColumnStretch(1, 1)
+        editor_grid.setColumnStretch(3, 1)
+
         action_row = QtWidgets.QHBoxLayout()
-        action_row.setSpacing(8)
+        action_row.setSpacing(4)
         self.send_btn = QtWidgets.QPushButton("发送命令")
         self.reset_btn = QtWidgets.QPushButton("恢复默认")
+        self.add_btn.setProperty("secondaryRole", True)
+        self.save_btn.setProperty("secondaryRole", True)
+        self.send_btn.setProperty("accentRole", True)
+        self.reset_btn.setProperty("dangerRole", True)
         action_row.addStretch(1)
         action_row.addWidget(self.reset_btn)
         action_row.addWidget(self.send_btn)
 
-        layout.addWidget(selector_label)
-        layout.addWidget(self.preset_combo)
+        layout.addLayout(selector_row)
         layout.addLayout(selector_actions)
-        layout.addWidget(name_label)
-        layout.addWidget(self.name_edit)
-        layout.addWidget(command_label)
-        layout.addWidget(self.command_edit)
-        layout.addWidget(type_label)
-        layout.addWidget(self.type_combo)
-        layout.addWidget(value_label)
-        layout.addWidget(self.value_stack)
+        layout.addLayout(editor_grid)
         layout.addLayout(action_row)
 
         self.preset_combo.currentIndexChanged.connect(self._on_preset_changed)
@@ -139,7 +172,7 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
 
         metrics = self.fontMetrics()
         for button in (self.add_btn, self.save_btn, self.send_btn, self.reset_btn):
-            button.setMinimumWidth(metrics.horizontalAdvance(button.text()) + 28)
+            button.setMinimumWidth(metrics.horizontalAdvance(button.text()) + 8)
 
     def _load_presets(self):
         blocker = QtCore.QSignalBlocker(self.preset_combo)
@@ -252,6 +285,16 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
             renamed.append(current)
         return renamed
 
+    @staticmethod
+    def _combine_command_and_value(command: str, value_text: str) -> str:
+        normalized_command = str(command).strip()
+        normalized_value = str(value_text).strip()
+        if not normalized_value:
+            return normalized_command
+        if normalized_command.startswith("#") and ":" not in normalized_command:
+            return f"{normalized_command}:{normalized_value}"
+        return f"{normalized_command} {normalized_value}"
+
     def _send_current_command(self):
         preset = self._collect_editor_state()
         command = preset["command"]
@@ -261,12 +304,12 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
         if preset["type"] == self.TYPE_NONE:
             final_command = command
         elif preset["type"] == self.TYPE_INT:
-            final_command = f"{command} {int(preset['value'])}"
+            final_command = self._combine_command_and_value(command, str(int(preset["value"])))
         elif preset["type"] == self.TYPE_FLOAT:
-            final_command = f"{command} {float(preset['value']):.3f}"
+            final_command = self._combine_command_and_value(command, f"{float(preset['value']):.3f}")
         else:
             text = str(preset["value"]).strip()
-            final_command = command if not text else f"{command} {text}"
+            final_command = self._combine_command_and_value(command, text)
 
         self.send_command.emit(final_command)
 
@@ -303,7 +346,10 @@ class PresetCommandPanel(QtWidgets.QGroupBox):
                 if self._presets_match(normalized, self.LEGACY_DEFAULT_PRESETS):
                     normalized = [dict(item) for item in self.DEFAULT_PRESETS]
                     migrated_from_defaults = True
-                elif self._presets_match(normalized, self.PREVIOUS_PID_DEFAULT_PRESETS) or self._presets_match(normalized, self.DEFAULT_PRESETS):
+                elif self._presets_match(normalized, self.PREVIOUS_PID_DEFAULT_PRESETS):
+                    normalized = [dict(item) for item in self.DEFAULT_PRESETS]
+                    migrated_from_defaults = True
+                elif self._presets_match(normalized, self.DEFAULT_PRESETS):
                     normalized = self._rename_to_current_default_names(normalized)
                     migrated_from_defaults = True
                 self._presets = normalized

@@ -14,7 +14,7 @@
 
 #define sgl_task_period 30        // 30ms
 #define sgl_tick_period 1         // 1ms
-#define simulation_tick_period 5  // 5ms
+#define simulation_tick_period 1  // 1ms
 
 static MultiTimer sgl_tick_timer;
 static MultiTimer sgl_task_timer;

@@ -446,21 +446,21 @@ components:
 - pkg:
     name: LCD
     description: LCD
-    enabled: true
+    enabled: false
     interface:
       device: ''
       instance: ''
 - pkg:
     name: BMI160
     description: IMU
-    enabled: true
+    enabled: false
     interface:
       device: I2C
       instance: I2C2
 - pkg:
     name: W25Q16
     description: FLASH
-    enabled: true
+    enabled: false
     interface:
       device: SPI
       instance: SPI3
@@ -495,7 +495,7 @@ components:
 - pkg:
     name: FLASHDB
     description: FlashDB
-    enabled: true
+    enabled: false
     interface:
       device: ''
       instance: ''
@@ -503,43 +503,43 @@ testcases:
 - case:
     name: ADC
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: IMU_BMI160
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: IMU_MPU6050
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: EASY_LOGGER
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: MULTITIMER
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: GPIO
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: I2C_SCAN
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: W25Q16
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: LCD_ST7735S
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: MOTOR
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: BLE
     description: null
@@ -547,11 +547,11 @@ testcases:
 - case:
     name: RS485
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: SGL
     description: null
-    enabled: true
+    enabled: false
 - case:
     name: SGL_LOGO
     description: null

@@ -14,6 +14,7 @@ class Telemetry:
     algo_id: int = 0
     run_state: int = 0
     extra: Dict[str, float] = field(default_factory=dict)
+    channel_labels: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

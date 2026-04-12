@@ -1,4 +1,5 @@
-import csv
+﻿import csv
+import math
 from bisect import bisect_left
 from collections import deque
 from pathlib import Path
@@ -10,17 +11,90 @@ import pyqtgraph as pg
 
 class PlotPanel(QtWidgets.QWidget):
     channel_toggled = QtCore.pyqtSignal(str, bool)
+    DISTURBANCE_CHANNELS = {"disturbance_sim"}
+    ALGORITHM_CHANNELS = {"u_cmd", "v1", "v2", "z1", "z2", "z3", "disturbance_remote"}
+    LADRC_ONLY_CHANNELS = {"v1", "v2", "z1", "z2", "z3"}
+    COMMON_CHANNELS = {"ref", "feedback", "roll", "pitch", "yaw", "vertical", "vertical_rate", "disturbance_sim"}
+    DISPLAY_SMOOTHING_EXCLUDED = {"ref"}
+    DISPLAY_SMOOTHING_WEIGHTS = (1.0, 2.0, 3.0, 2.0, 1.0)
+    DEFAULT_VISIBLE_CHANNELS = {"ref", "feedback"}
+    BALANCE_RUNTIME_CHANNELS = {"u_cmd", "v1", "v2", "z1", "z2", "z3"}
+    DEFAULT_CHANNEL_ORDER = ["ref", "feedback", "disturbance_sim", "roll", "pitch", "yaw"]
+    LOCAL_CHANNEL_ORDER = []
+    REMOTE_FIXED_CHANNEL_ORDER = ["u_cmd", "v1", "v2", "z1", "z2", "z3"]
+    REMOTE_FIXED_CHANNELS_BY_ALGO = {
+        "LADRC": ["u_cmd", "v1", "v2", "z1", "z2", "z3", "disturbance_remote"],
+        "PID": ["u_cmd", "disturbance_remote"],
+        "OPEN_LOOP": ["u_cmd", "disturbance_remote"],
+    }
+    STATIC_SECTION_TITLES = {
+        "default": "默认通道",
+        "local": "运行扩展",
+        "remote": "下位机上传",
+    }
+    CHANNEL_DISPLAY_ORDER = [
+        "ref",
+        "feedback",
+        "disturbance_sim",
+        "u_cmd",
+        "v1",
+        "v2",
+        "z1",
+        "z2",
+        "z3",
+        "roll",
+        "pitch",
+        "yaw",
+    ]
+    DYNAMIC_GROUP_ORDER = ("output", "state", "error")
+    DYNAMIC_GROUP_TITLES = {
+        "output": "算法输出",
+        "state": "算法状态",
+        "error": "算法误差",
+    }
+    DYNAMIC_CHANNEL_COLORS = (
+        "#f59e0b",
+        "#8b5cf6",
+        "#14b8a6",
+        "#ec4899",
+        "#22c55e",
+        "#0ea5e9",
+        "#f43f5e",
+        "#a855f7",
+        "#84cc16",
+        "#06b6d4",
+    )
 
     CHANNEL_LABELS = {
-        "ref": "参考值",
-        "feedback": "控制反馈",
+        "ref": "期望值",
+        "feedback": "仿真值",
         "u_cmd": "控制输出",
-        "roll": "滚转角",
-        "pitch": "俯仰角",
-        "yaw": "偏航角",
+        "pid_error": "PID 误差",
+        "pid_integral": "PID 积分累积",
+        "pid_rate": "PID 微分输入",
+        "pid_p_out": "比例项 P",
+        "pid_i_out": "积分项 I",
+        "pid_d_out": "微分项 D",
+        "pid_u_raw": "未限幅输出",
+        "v1": "TD 输出 v1",
+        "v2": "TD 输出 v2",
+        "z1": "ESO 状态 z1",
+        "z2": "ESO 状态 z2",
+        "z3": "ESO 状态 z3",
+        "sim_mode": "LADRC 模式",
+        "r": "跟踪带宽 r",
+        "h": "采样周期 h",
+        "w0": "观测器带宽 w0",
+        "wc": "控制器带宽 wc",
+        "b0": "估计增益 b0",
+        "init": "初始值 init",
+        "roll": "姿态角-滚转",
+        "pitch": "姿态角-俯仰",
+        "yaw": "姿态角-偏航",
         "vertical": "垂向量",
         "vertical_rate": "垂向速度",
-        "disturbance": "外部扰动",
+        "disturbance_sim": "环境扰动",
+        "disturbance_remote": "算法扰动",
     }
     MODEL_VERTICAL_LABELS = {
         "rov": ("仿真深度", "深度变化率", "环境扰动"),
@@ -31,46 +105,89 @@ class PlotPanel(QtWidgets.QWidget):
         "balance": {
             "ref": True,
             "feedback": True,
-            "u_cmd": True,
-            "roll": True,
-            "pitch": True,
+            "u_cmd": False,
+            "v1": False,
+            "v2": False,
+            "z1": False,
+            "z2": False,
+            "z3": False,
+            "roll": False,
+            "pitch": False,
             "yaw": False,
-            "vertical": True,
-            "vertical_rate": False,
-            "disturbance": False,
+            "disturbance_sim": False,
         },
         "attitude": {
-            "ref": True,
-            "feedback": True,
-            "u_cmd": True,
+            "ref": False,
+            "feedback": False,
+            "u_cmd": False,
+            "v1": False,
+            "v2": False,
+            "z1": False,
+            "z2": False,
+            "z3": False,
             "roll": True,
             "pitch": True,
             "yaw": True,
-            "vertical": False,
-            "vertical_rate": False,
-            "disturbance": False,
+            "disturbance_sim": False,
         },
         "vertical": {
             "ref": True,
             "feedback": True,
             "u_cmd": True,
+            "v1": False,
+            "v2": False,
+            "z1": False,
+            "z2": False,
+            "z3": False,
             "roll": False,
             "pitch": False,
             "yaw": False,
-            "vertical": True,
-            "vertical_rate": True,
-            "disturbance": True,
+            "disturbance_sim": False,
+        },
+        "pid": {
+            "ref": True,
+            "feedback": True,
+            "u_cmd": True,
+            "pid_error": True,
+            "pid_p_out": True,
+            "pid_i_out": True,
+            "pid_d_out": True,
+            "pid_integral": False,
+            "pid_rate": False,
+            "pid_u_raw": False,
+            "roll": False,
+            "pitch": False,
+            "yaw": False,
+            "disturbance_sim": False,
+            "disturbance_remote": False,
+        },
+        "ladrc": {
+            "ref": True,
+            "feedback": True,
+            "u_cmd": True,
+            "v1": True,
+            "v2": True,
+            "z1": True,
+            "z2": True,
+            "z3": True,
+            "roll": False,
+            "pitch": False,
+            "yaw": False,
+            "disturbance_sim": False,
         },
         "all": {
             "ref": True,
             "feedback": True,
             "u_cmd": True,
+            "v1": True,
+            "v2": True,
+            "z1": True,
+            "z2": True,
+            "z3": True,
             "roll": True,
             "pitch": True,
             "yaw": True,
-            "vertical": True,
-            "vertical_rate": True,
-            "disturbance": True,
+            "disturbance_sim": False,
         },
     }
     VIEWBOX_MENU_TEXTS = {
@@ -136,15 +253,22 @@ class PlotPanel(QtWidgets.QWidget):
         self._channels: Dict[str, Dict[str, object]] = {}
         self._channel_widget_detached = False
         self._latest_time = 0.0
-        self._updating_view = False
+        self._updating_view = 0
         self._history_navigation = False
         self._view_history: List[Tuple[Tuple[float, float], Tuple[float, float]]] = []
         self._view_history_index = -1
         self._last_mouse_x = 0.0
         self._point_markers = []
         self._theme = self._default_theme()
+        self._algorithm_channel_labels: Dict[str, str] = {}
+        self._dynamic_algorithm_channels: List[str] = []
+        self._dynamic_channel_owners: Dict[str, str] = {}
+        self._current_algorithm_key = "LADRC"
+        self._channel_section_headers: List[QtWidgets.QLabel] = []
+        self._runtime_channel_expanded = False
         self._build()
         self._init_channels()
+        self._reflow_channel_layout()
         self._populate_measure_channel_combo()
         self._install_shortcuts()
         self.apply_preset(self.preset_combo.currentData())
@@ -167,6 +291,20 @@ class PlotPanel(QtWidgets.QWidget):
             "plot_annotation_text": "#213140",
             "plot_annotation_border": "rgba(84,104,124,90)",
         }
+
+    def _wrap_toolbar_row(self, widget: QtWidgets.QWidget) -> QtWidgets.QScrollArea:
+        widget.setSizePolicy(QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Preferred)
+        scroll = QtWidgets.QScrollArea()
+        scroll.setObjectName("toolbarRowScroll")
+        scroll.setWidgetResizable(False)
+        scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(widget)
+        height = max(widget.sizeHint().height() + 10, 44)
+        scroll.setMinimumHeight(height)
+        scroll.setMaximumHeight(height + 6)
+        return scroll
 
     @staticmethod
     def _to_qcolor(value) -> QtGui.QColor:
@@ -195,14 +333,17 @@ class PlotPanel(QtWidgets.QWidget):
     def _build(self):
         self._root_layout = QtWidgets.QVBoxLayout(self)
         self._root_layout.setContentsMargins(0, 0, 0, 0)
-        self._root_layout.setSpacing(10)
+        self._root_layout.setSpacing(8)
 
-        tool_widget = QtWidgets.QWidget()
+        tool_widget = QtWidgets.QFrame()
+        tool_widget.setObjectName("panelCard")
         tool_layout = QtWidgets.QVBoxLayout(tool_widget)
-        tool_layout.setContentsMargins(0, 0, 0, 0)
-        tool_layout.setSpacing(4)
+        tool_layout.setContentsMargins(12, 10, 12, 10)
+        tool_layout.setSpacing(6)
 
-        row1 = QtWidgets.QHBoxLayout()
+        row1_widget = QtWidgets.QWidget()
+        row1 = QtWidgets.QHBoxLayout(row1_widget)
+        row1.setContentsMargins(0, 0, 0, 0)
         row1.setSpacing(8)
         self.pause_btn = QtWidgets.QPushButton("暂停")
         self.clear_btn = QtWidgets.QPushButton("清空")
@@ -210,6 +351,8 @@ class PlotPanel(QtWidgets.QWidget):
         self.preset_combo.addItem("平衡视图", "balance")
         self.preset_combo.addItem("姿态调试", "attitude")
         self.preset_combo.addItem("垂向控制", "vertical")
+        self.preset_combo.addItem("PID 调试", "pid")
+        self.preset_combo.addItem("LADRC 状态", "ladrc")
         self.preset_combo.addItem("全量监视", "all")
         self.preset_combo.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToContents)
         self.window_spin = QtWidgets.QDoubleSpinBox()
@@ -220,28 +363,44 @@ class PlotPanel(QtWidgets.QWidget):
         self.follow_latest_cb = QtWidgets.QCheckBox("实时跟随")
         self.follow_latest_cb.setChecked(True)
         self.focus_btn = QtWidgets.QPushButton("一键聚焦")
+        self.more_tools_btn = QtWidgets.QToolButton()
+        self.more_tools_btn.setText("更多工具")
+        self.more_tools_btn.setCheckable(True)
+        self.more_tools_btn.setChecked(False)
+        self.more_tools_btn.setProperty("secondaryRole", True)
+        self.more_tools_btn.setToolButtonStyle(QtCore.Qt.ToolButtonTextOnly)
         self.annotation_cb = QtWidgets.QCheckBox("点击标记")
         self.readout_label = QtWidgets.QLabel("游标: --")
-        self.readout_label.setObjectName("statusHint")
+        self.readout_label.setObjectName("panelSummary")
         self.readout_label.setMinimumWidth(160)
+        self.readout_label.setMaximumWidth(280)
         self.readout_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
         self.measure_label = QtWidgets.QLabel("测量: --")
-        self.measure_label.setObjectName("statusHint")
+        self.measure_label.setObjectName("panelSummary")
         self.measure_label.setMinimumWidth(160)
+        self.measure_label.setMaximumWidth(320)
         self.measure_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        preset_label = QtWidgets.QLabel("预设")
+        preset_label.setObjectName("panelFieldLabel")
+        window_label = QtWidgets.QLabel("时间窗口")
+        window_label.setObjectName("panelFieldLabel")
+        self.pause_btn.setProperty("secondaryRole", True)
+        self.clear_btn.setProperty("dangerRole", True)
+        self.focus_btn.setProperty("accentRole", True)
         row1.addWidget(self.pause_btn)
         row1.addWidget(self.clear_btn)
-        row1.addWidget(QtWidgets.QLabel("预设"))
+        row1.addWidget(preset_label)
         row1.addWidget(self.preset_combo)
-        row1.addWidget(QtWidgets.QLabel("时间窗口"))
+        row1.addWidget(window_label)
         row1.addWidget(self.window_spin)
         row1.addWidget(self.follow_latest_cb)
         row1.addWidget(self.focus_btn)
+        row1.addWidget(self.more_tools_btn)
         row1.addWidget(self.annotation_cb)
         row1.addStretch(1)
         row1.addWidget(self.readout_label, 1)
         row1.addWidget(self.measure_label, 1)
-        tool_layout.addLayout(row1)
+        tool_layout.addWidget(self._wrap_toolbar_row(row1_widget))
         self.pan_left_btn = QtWidgets.QPushButton("左移")
         self.pan_right_btn = QtWidgets.QPushButton("右移")
         self.zoom_in_btn = QtWidgets.QPushButton("时间放大")
@@ -263,6 +422,53 @@ class PlotPanel(QtWidgets.QWidget):
         self.reset_measure_btn = QtWidgets.QPushButton("重置游标")
         self.export_image_btn = QtWidgets.QPushButton("导出图片")
         self.export_csv_btn = QtWidgets.QPushButton("导出 CSV")
+        self.latest_btn.setProperty("accentRole", True)
+        self.fit_y_btn.setProperty("secondaryRole", True)
+        self.export_image_btn.setProperty("secondaryRole", True)
+        self.export_csv_btn.setProperty("secondaryRole", True)
+
+        row2_widget = QtWidgets.QWidget()
+        row2 = QtWidgets.QHBoxLayout(row2_widget)
+        row2.setContentsMargins(0, 0, 0, 0)
+        row2.setSpacing(8)
+        interaction_label = QtWidgets.QLabel("交互")
+        interaction_label.setObjectName("panelFieldLabel")
+        measure_channel_label = QtWidgets.QLabel("测量通道")
+        measure_channel_label.setObjectName("panelFieldLabel")
+        export_label = QtWidgets.QLabel("导出")
+        export_label.setObjectName("panelFieldLabel")
+        for hidden_widget in (
+            self.pan_left_btn,
+            self.pan_right_btn,
+            self.zoom_in_btn,
+            self.zoom_out_btn,
+            self.view_back_btn,
+            self.view_forward_btn,
+            self.latest_btn,
+            self.fit_y_btn,
+            self.mouse_mode_combo,
+        ):
+            hidden_widget.setParent(row2_widget)
+            hidden_widget.hide()
+        row2.addWidget(interaction_label)
+        row2.addWidget(self.cursor_cb)
+        row2.addWidget(self.measurement_cb)
+        row2.addWidget(self.clear_annotation_btn)
+        row2.addSpacing(8)
+        row2.addWidget(measure_channel_label)
+        row2.addWidget(self.measure_channel_combo)
+        row2.addWidget(self.capture_a_btn)
+        row2.addWidget(self.capture_b_btn)
+        row2.addWidget(self.reset_measure_btn)
+        row2.addSpacing(8)
+        row2.addWidget(export_label)
+        row2.addWidget(self.export_image_btn)
+        row2.addWidget(self.export_csv_btn)
+        row2.addStretch(1)
+
+        self.tool_detail_scroll = self._wrap_toolbar_row(row2_widget)
+        self.tool_detail_scroll.setVisible(False)
+        tool_layout.addWidget(self.tool_detail_scroll)
         self._root_layout.addWidget(tool_widget)
 
         self.plot = pg.PlotWidget()
@@ -270,11 +476,23 @@ class PlotPanel(QtWidgets.QWidget):
         self.plot.addLegend(colCount=2)
         self.plot.setLabel("bottom", "时间", units="s")
         self.plot.setLabel("left", "数值")
+        self.plot.setLabel("right", "扰动")
         self.plot.setBackground("#0f172a")
         self.plot.setClipToView(True)
         self._root_layout.addWidget(self.plot, 1)
 
+        self._plot_item = self.plot.getPlotItem()
         self._view_box = self.plot.getViewBox()
+        self._disturbance_view = pg.ViewBox(enableMenu=False)
+        self._disturbance_view.setMouseEnabled(x=False, y=False)
+        self._plot_item.showAxis("right")
+        self._plot_item.scene().addItem(self._disturbance_view)
+        self._plot_item.getAxis("right").linkToView(self._disturbance_view)
+        self._disturbance_view.setXLink(self._plot_item)
+        self._view_box.sigResized.connect(self._sync_disturbance_view_geometry)
+        if hasattr(self._view_box, "sigRangeChanged"):
+            self._view_box.sigRangeChanged.connect(self._on_view_range_changed)
+        self._sync_disturbance_view_geometry()
         self._view_box.setMouseEnabled(x=True, y=True)
         self._localize_context_menus()
         if hasattr(self._view_box, "sigRangeChangedManually"):
@@ -310,11 +528,52 @@ class PlotPanel(QtWidgets.QWidget):
         self._measure_line_a.sigPositionChanged.connect(self._update_measurement_readout)
         self._measure_line_b.sigPositionChanged.connect(self._update_measurement_readout)
 
-        self.channel_box = QtWidgets.QGroupBox("波形通道")
-        self.channel_layout = QtWidgets.QGridLayout(self.channel_box)
-        self.channel_layout.setContentsMargins(12, 12, 12, 12)
-        self.channel_layout.setHorizontalSpacing(14)
-        self.channel_layout.setVerticalSpacing(8)
+        self.channel_box = QtWidgets.QFrame()
+        self.channel_box.setObjectName("channelControlPanel")
+        self.channel_box_layout = QtWidgets.QVBoxLayout(self.channel_box)
+        self.channel_box_layout.setContentsMargins(0, 0, 0, 0)
+        self.channel_box_layout.setSpacing(10)
+
+        channel_header = QtWidgets.QFrame()
+        channel_header.setObjectName("panelHero")
+        channel_header_layout = QtWidgets.QHBoxLayout(channel_header)
+        channel_header_layout.setContentsMargins(10, 8, 10, 8)
+        channel_header_layout.setSpacing(10)
+
+        channel_header_text = QtWidgets.QVBoxLayout()
+        channel_header_text.setSpacing(2)
+        channel_eyebrow = QtWidgets.QLabel("通道")
+        channel_eyebrow.setObjectName("panelEyebrow")
+        channel_title = QtWidgets.QLabel("波形通道")
+        channel_title.setObjectName("panelHeroTitle")
+        channel_subtitle = QtWidgets.QLabel("管理波形通道与运行时扩展项。")
+        channel_subtitle.setObjectName("panelHeroSubtitle")
+        channel_subtitle.setWordWrap(True)
+        channel_header_text.addWidget(channel_eyebrow)
+        channel_header_text.addWidget(channel_title)
+        channel_header_text.addWidget(channel_subtitle)
+        channel_header_layout.addLayout(channel_header_text, 1)
+
+        self.channel_summary_label = QtWidgets.QLabel("默认视图 · 0 / 0")
+        self.channel_summary_label.setObjectName("panelSummary")
+        self.channel_summary_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.channel_summary_label.setMinimumWidth(124)
+        channel_header_layout.addWidget(self.channel_summary_label, 0, QtCore.Qt.AlignTop)
+        self.channel_box_layout.addWidget(channel_header)
+
+        channel_content = QtWidgets.QFrame()
+        channel_content.setObjectName("panelCard")
+        channel_content_layout = QtWidgets.QVBoxLayout(channel_content)
+        channel_content_layout.setContentsMargins(10, 8, 10, 8)
+        channel_content_layout.setSpacing(8)
+        self.channel_grid_widget = QtWidgets.QWidget()
+        self.channel_grid_widget.setObjectName("channelGridHost")
+        self.channel_layout = QtWidgets.QGridLayout(self.channel_grid_widget)
+        self.channel_layout.setContentsMargins(0, 0, 0, 0)
+        self.channel_layout.setHorizontalSpacing(10)
+        self.channel_layout.setVerticalSpacing(6)
+        channel_content_layout.addWidget(self.channel_grid_widget)
+        self.channel_box_layout.addWidget(channel_content)
         self._root_layout.addWidget(self.channel_box)
 
         self.pause_btn.clicked.connect(self._toggle_pause)
@@ -335,6 +594,7 @@ class PlotPanel(QtWidgets.QWidget):
         self.cursor_cb.toggled.connect(self._toggle_cursor)
         self.measurement_cb.toggled.connect(self._toggle_measurement)
         self.measure_channel_combo.currentIndexChanged.connect(self._update_measurement_readout)
+        self.more_tools_btn.toggled.connect(self.tool_detail_scroll.setVisible)
         self.capture_a_btn.clicked.connect(lambda: self._capture_measure_cursor("a"))
         self.capture_b_btn.clicked.connect(lambda: self._capture_measure_cursor("b"))
         self.reset_measure_btn.clicked.connect(self._reset_measurement_lines)
@@ -358,7 +618,7 @@ class PlotPanel(QtWidgets.QWidget):
         self.reset_measure_btn.setToolTip("将双游标重置到当前时间窗口的 25% 和 75% 位置")
         self.export_image_btn.setToolTip("导出当前波形视图为 PNG 图片")
         self.export_csv_btn.setToolTip("导出当前时间窗口内的可见曲线数据为 CSV")
-        self.annotation_cb.setToolTip("开启后，点击波形可在最近数据点添加标签")
+        self.annotation_cb.setToolTip("开启后，左键点击波形添加标签，右键点击标签删除")
         self.clear_annotation_btn.setToolTip("清除当前所有点击标签")
         self._toggle_measurement(False)
 
@@ -399,35 +659,389 @@ class PlotPanel(QtWidgets.QWidget):
 
     def _init_channels(self):
         specs = [
-            ("ref", "#38bdf8", True),
-            ("feedback", "#22c55e", True),
-            ("u_cmd", "#f97316", True),
-            ("roll", "#eab308", True),
-            ("pitch", "#a78bfa", True),
-            ("yaw", "#f43f5e", False),
-            ("vertical", "#14b8a6", True),
-            ("vertical_rate", "#0ea5e9", False),
-            ("disturbance", "#94a3b8", False),
+            ("ref", "#38bdf8"),
+            ("feedback", "#22c55e"),
+            ("u_cmd", "#f97316"),
+            ("disturbance_sim", "#14b8a6"),
+            ("v1", "#facc15"),
+            ("v2", "#f59e0b"),
+            ("z1", "#8b5cf6"),
+            ("z2", "#6366f1"),
+            ("z3", "#ec4899"),
+            ("roll", "#eab308"),
+            ("pitch", "#a78bfa"),
+            ("yaw", "#f43f5e"),
         ]
-        for name, color, checked in specs:
-            self._add_channel(name, color, checked)
+        for name, color in specs:
+            self._add_channel(name, color, name in self.DEFAULT_VISIBLE_CHANNELS)
 
     def _add_channel(self, name: str, color: str, checked: bool):
-        display_name = self.CHANNEL_LABELS.get(name, name)
-        curve = self.plot.plot([], [], pen=pg.mkPen(color=color, width=1.8), name=display_name)
+        display_name = self._channel_display_name(name)
+        control_zh, control_en = self._channel_control_labels(name, display_name)
+        if self._is_disturbance_channel(name):
+            curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=color, width=1.8), name=display_name)
+            self._disturbance_view.addItem(curve)
+            legend = self.plot.plotItem.legend
+            if legend is not None:
+                legend.addItem(curve, display_name)
+        else:
+            curve = self.plot.plot([], [], pen=pg.mkPen(color=color, width=1.8), name=display_name)
         curve.setVisible(checked)
-        checkbox = QtWidgets.QCheckBox(display_name)
+        checkbox = QtWidgets.QCheckBox(control_zh)
         checkbox.setChecked(checked)
         checkbox.toggled.connect(lambda on, ch=name: self.set_channel_visible(ch, on))
-        index = len(self._channels)
-        self.channel_layout.addWidget(checkbox, index, 0)
+        english_label = QtWidgets.QLabel(control_en)
+        english_label.setObjectName("statusHint")
+        english_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        english_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        english_label.setFixedWidth(150)
+        self._set_english_label_text(english_label, control_en)
         self._channels[name] = {
             "curve": curve,
             "x": deque(maxlen=self.max_points),
             "y": deque(maxlen=self.max_points),
             "visible": checked,
             "checkbox": checkbox,
+            "english_label": english_label,
+            "dynamic": bool(name in self._dynamic_algorithm_channels),
         }
+
+    def _is_disturbance_channel(self, name: str) -> bool:
+        return str(name) in self.DISTURBANCE_CHANNELS
+
+    def _should_smooth_channel(self, channel_name: str) -> bool:
+        return str(channel_name) not in self.DISPLAY_SMOOTHING_EXCLUDED
+
+    def _smoothed_series(self, channel_name: str, x_values: List[float], y_values: List[float]) -> Tuple[List[float], List[float]]:
+        if not self._should_smooth_channel(channel_name):
+            return x_values, y_values
+        if len(y_values) < 3:
+            return x_values, y_values
+
+        radius = len(self.DISPLAY_SMOOTHING_WEIGHTS) // 2
+        smoothed: List[float] = []
+        for index, current in enumerate(y_values):
+            if not math.isfinite(float(current)):
+                smoothed.append(float("nan"))
+                continue
+
+            weighted_sum = 0.0
+            weight_total = 0.0
+            for offset, weight in enumerate(self.DISPLAY_SMOOTHING_WEIGHTS):
+                sample_index = index + offset - radius
+                if sample_index < 0 or sample_index >= len(y_values):
+                    continue
+                sample = y_values[sample_index]
+                if not math.isfinite(float(sample)):
+                    continue
+                weighted_sum += float(sample) * float(weight)
+                weight_total += float(weight)
+            if weight_total <= 0.0:
+                smoothed.append(float(current))
+            else:
+                smoothed.append(weighted_sum / weight_total)
+        return x_values, smoothed
+
+    def _refresh_channel_curve(self, channel_name: str):
+        channel = self._channels.get(channel_name)
+        if channel is None:
+            return
+        x_values = list(channel["x"])
+        y_values = list(channel["y"])
+        if not x_values:
+            channel["curve"].setData([], [])
+            return
+        display_x, display_y = self._smoothed_series(channel_name, x_values, y_values)
+        channel["curve"].setData(display_x, display_y)
+
+    def _channel_display_name(self, channel_name: str) -> str:
+        if channel_name in self.ALGORITHM_CHANNELS or channel_name in self._dynamic_algorithm_channels:
+            override = self._algorithm_channel_labels.get(channel_name)
+            if isinstance(override, str) and override.strip():
+                return override.strip()
+        return self.CHANNEL_LABELS.get(channel_name, channel_name)
+
+    def _channel_control_labels(self, channel_name: str, display_name: str | None = None) -> Tuple[str, str]:
+        english_label = self._algorithm_channel_labels.get(channel_name, channel_name)
+        if not isinstance(english_label, str) or not english_label.strip():
+            english_label = str(channel_name)
+        english_label = english_label.strip()
+
+        current_checkbox = None
+        if channel_name in self._channels:
+            current_checkbox = self._channels[channel_name]["checkbox"].text()
+
+        if channel_name == "disturbance_sim" and isinstance(display_name, str) and display_name.strip():
+            return display_name.strip(), english_label
+
+        chinese_label = self.CHANNEL_LABELS.get(channel_name)
+        if isinstance(chinese_label, str) and chinese_label.strip():
+            return chinese_label.strip(), english_label
+
+        if isinstance(current_checkbox, str) and current_checkbox.strip() and self._contains_cjk(current_checkbox):
+            return current_checkbox.strip(), english_label
+
+        fallback = display_name if isinstance(display_name, str) and display_name.strip() else english_label
+        fallback = str(fallback).strip()
+        if not self._contains_cjk(fallback):
+            fallback = f"字段 {fallback}"
+        return fallback, english_label
+
+    def _set_english_label_text(self, label: QtWidgets.QLabel, full_text: str):
+        text = str(full_text).strip()
+        label.setToolTip(text)
+        metrics = label.fontMetrics()
+        label.setText(metrics.elidedText(text, QtCore.Qt.ElideRight, 140))
+
+    def _next_dynamic_channel_color(self) -> str:
+        index = len(self._dynamic_algorithm_channels) % len(self.DYNAMIC_CHANNEL_COLORS)
+        return self.DYNAMIC_CHANNEL_COLORS[index]
+
+    def _is_dynamic_algorithm_channel(self, channel_name: str) -> bool:
+        return str(channel_name) in self._dynamic_algorithm_channels
+
+    @staticmethod
+    def _contains_cjk(text: str) -> bool:
+        for char in str(text):
+            if "\u4e00" <= char <= "\u9fff":
+                return True
+        return False
+
+    def _should_create_dynamic_algorithm_channel(self, channel_name: str) -> bool:
+        name = str(channel_name).strip()
+        if not name or name.startswith("_"):
+            return False
+        if name in self._channels:
+            return False
+        if name in self.COMMON_CHANNELS or name in self.ALGORITHM_CHANNELS:
+            return False
+        return True
+
+    def _default_dynamic_channel_visibility(self) -> bool:
+        preset_key = self.current_preset_key()
+        return preset_key == "all"
+
+    def _set_channel_visible_silently(self, channel_name: str, visible: bool):
+        if channel_name not in self._channels:
+            return
+        control = self._channels[channel_name]["checkbox"]
+        blocker = QtCore.QSignalBlocker(control)
+        control.setChecked(bool(visible))
+        del blocker
+        self.set_channel_visible(channel_name, bool(visible))
+
+    def _apply_balance_runtime_visibility(self):
+        if self.current_preset_key() != "balance":
+            return
+        for channel_name in self.BALANCE_RUNTIME_CHANNELS:
+            if channel_name in self._channels:
+                self._set_channel_visible_silently(channel_name, False)
+        for channel_name in self._dynamic_algorithm_channels:
+            if channel_name in self._channels:
+                self._set_channel_visible_silently(channel_name, False)
+
+    def set_runtime_channel_expanded(self, expanded: bool):
+        expanded = bool(expanded)
+        if self._runtime_channel_expanded == expanded:
+            return
+        self._runtime_channel_expanded = expanded
+        if not expanded and self.current_preset_key() == "balance":
+            for channel_name in self.BALANCE_RUNTIME_CHANNELS:
+                if channel_name in self._channels:
+                    self._set_channel_visible_silently(channel_name, False)
+            for channel_name in self._dynamic_algorithm_channels:
+                if channel_name in self._channels:
+                    self._set_channel_visible_silently(channel_name, False)
+        self._reflow_channel_layout()
+
+    def _ensure_dynamic_algorithm_channel(self, channel_name: str):
+        if not self._should_create_dynamic_algorithm_channel(channel_name):
+            return
+        color = self._next_dynamic_channel_color()
+        self._dynamic_algorithm_channels.append(str(channel_name))
+        self._add_channel(str(channel_name), color, self._default_dynamic_channel_visibility())
+        self._reflow_channel_layout()
+        self._populate_measure_channel_combo()
+
+    def _dynamic_channel_group(self, channel_name: str) -> str:
+        name = str(channel_name).strip().lower()
+        tokens = [token for token in name.replace("-", "_").split("_") if token]
+        if any("err" in token or "error" in token for token in tokens):
+            return "error"
+        if name.endswith("out") or any(token in {"out", "output", "cmd", "control", "ctrl"} for token in tokens):
+            return "output"
+        return "state"
+
+    def _ordered_dynamic_channel_names(self) -> List[str]:
+        grouped: Dict[str, List[str]] = {key: [] for key in self.DYNAMIC_GROUP_ORDER}
+        extras: List[str] = []
+        for channel_name in self._dynamic_algorithm_channels:
+            group_key = self._dynamic_channel_group(channel_name)
+            if group_key in grouped:
+                grouped[group_key].append(channel_name)
+            else:
+                extras.append(channel_name)
+        ordered: List[str] = []
+        for group_key in self.DYNAMIC_GROUP_ORDER:
+            ordered.extend(grouped[group_key])
+        ordered.extend(extras)
+        return ordered
+
+    def _ordered_channel_names(self) -> List[str]:
+        ordered: List[str] = []
+        leading = self.DEFAULT_CHANNEL_ORDER + self.LOCAL_CHANNEL_ORDER + self.REMOTE_FIXED_CHANNEL_ORDER
+        tail = [name for name in self.CHANNEL_DISPLAY_ORDER if name not in leading]
+        for channel_name in leading:
+            if channel_name in self._channels:
+                ordered.append(channel_name)
+        for channel_name in self._ordered_dynamic_channel_names():
+            if channel_name in self._channels and channel_name not in ordered:
+                ordered.append(channel_name)
+        for channel_name in tail:
+            if channel_name in self._channels and channel_name not in ordered:
+                ordered.append(channel_name)
+        for channel_name in self._channels.keys():
+            if channel_name not in ordered:
+                ordered.append(channel_name)
+        return ordered
+
+    def _update_channel_summary(self):
+        if not hasattr(self, "channel_summary_label"):
+            return
+        total_count = len(self._channels)
+        visible_count = sum(1 for channel in self._channels.values() if channel["visible"])
+        mode_text = "运行扩展" if self._runtime_channel_expanded else "默认视图"
+        dynamic_count = len(self._dynamic_algorithm_channels)
+        if dynamic_count > 0:
+            summary = f"{mode_text} · {visible_count} / {total_count} · 动态 {dynamic_count}"
+        else:
+            summary = f"{mode_text} · {visible_count} / {total_count}"
+        self.channel_summary_label.setText(summary)
+
+    def _reflow_channel_layout(self):
+        for header in self._channel_section_headers:
+            header.deleteLater()
+        self._channel_section_headers.clear()
+        while self.channel_layout.count():
+            item = self.channel_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(self.channel_grid_widget)
+
+        row = 0
+
+        def add_column_headers():
+            nonlocal row
+            left_label = QtWidgets.QLabel("中文通道")
+            right_label = QtWidgets.QLabel("English")
+            left_label.setObjectName("panelTableHeader")
+            right_label.setObjectName("panelTableHeader")
+            self.channel_layout.addWidget(left_label, row, 0)
+            self.channel_layout.addWidget(right_label, row, 1)
+            self._channel_section_headers.extend([left_label, right_label])
+            row += 1
+
+        def add_channel_row(channel_name: str):
+            nonlocal row
+            channel = self._channels.get(channel_name)
+            if not channel:
+                return
+            self.channel_layout.addWidget(channel["checkbox"], row, 0)
+            self.channel_layout.addWidget(channel["english_label"], row, 1)
+            row += 1
+
+        def add_section(title: str):
+            nonlocal row
+            label = QtWidgets.QLabel(title)
+            label.setObjectName("panelSectionHeader")
+            self.channel_layout.addWidget(label, row, 0, 1, 2)
+            self._channel_section_headers.append(label)
+            row += 1
+
+        def add_section_channels(channel_names: List[str]):
+            for channel_name in channel_names:
+                add_channel_row(channel_name)
+
+        add_column_headers()
+        default_channels = [name for name in self.DEFAULT_CHANNEL_ORDER if name in self._channels]
+        if default_channels:
+            add_section(self.STATIC_SECTION_TITLES["default"])
+            add_section_channels(default_channels)
+
+        if self._runtime_channel_expanded:
+            local_channels = [name for name in self.LOCAL_CHANNEL_ORDER if name in self._channels]
+            if local_channels:
+                add_section(self.STATIC_SECTION_TITLES["local"])
+                add_section_channels(local_channels)
+
+            remote_fixed_channels = [name for name in self.REMOTE_FIXED_CHANNEL_ORDER if name in self._channels]
+            remote_dynamic_channels = self._ordered_dynamic_channel_names()
+            if remote_fixed_channels or remote_dynamic_channels:
+                add_section(self.STATIC_SECTION_TITLES["remote"])
+                add_section_channels(remote_fixed_channels + remote_dynamic_channels)
+
+            static_known = set(self.DEFAULT_CHANNEL_ORDER + self.LOCAL_CHANNEL_ORDER + self.REMOTE_FIXED_CHANNEL_ORDER)
+            tail = [name for name in self.CHANNEL_DISPLAY_ORDER if name not in static_known and name not in self._dynamic_algorithm_channels]
+            add_section_channels([channel_name for channel_name in tail if channel_name in self._channels])
+
+            for channel_name in self._channels.keys():
+                if channel_name in static_known or channel_name in self._dynamic_algorithm_channels or channel_name in tail:
+                    continue
+                add_section_channels([channel_name])
+
+        self._update_channel_summary()
+
+    def _sync_disturbance_view_geometry(self):
+        self._disturbance_view.setGeometry(self._view_box.sceneBoundingRect())
+        self._disturbance_view.linkedViewChanged(self._view_box, self._disturbance_view.XAxis)
+
+    def _on_view_range_changed(self, *args):
+        self._sync_disturbance_view_geometry()
+        self._fit_disturbance_y_to_visible()
+
+    def _update_disturbance_axis_visibility(self):
+        any_visible = any(
+            self._channels[name]["visible"]
+            for name in self.DISTURBANCE_CHANNELS
+            if name in self._channels
+        )
+        self._plot_item.showAxis("right", any_visible)
+        self._fit_disturbance_y_to_visible()
+
+    def _collect_visible_disturbance_y_in_current_x_range(self) -> List[float]:
+        x_start, x_end = self._current_x_range()
+        values: List[float] = []
+        for channel_name in self.DISTURBANCE_CHANNELS:
+            channel = self._channels.get(channel_name)
+            if not channel or not channel["visible"] or not channel["x"]:
+                continue
+            xs = list(channel["x"])
+            ys = list(channel["y"])
+            scoped = [
+                y for x, y in zip(xs, ys)
+                if x_start <= x <= x_end and math.isfinite(float(y))
+            ]
+            if not scoped:
+                scoped = [y for y in ys if math.isfinite(float(y))]
+            values.extend(scoped)
+        return values
+
+    def _fit_disturbance_y_to_visible(self):
+        y_values = self._collect_visible_disturbance_y_in_current_x_range()
+        if not y_values:
+            self._disturbance_view.enableAutoRange(axis=pg.ViewBox.YAxis, enable=True)
+            return
+        y_min = min(y_values)
+        y_max = max(y_values)
+        if abs(y_max - y_min) < 1e-6:
+            pad = max(0.1, abs(y_max) * 0.2 + 0.1)
+            y_min -= pad
+            y_max += pad
+        else:
+            pad = (y_max - y_min) * 0.18
+            y_min -= pad
+            y_max += pad
+        self._disturbance_view.setYRange(y_min, y_max, padding=0.0)
 
     def _install_shortcuts(self):
         shortcuts = [
@@ -451,8 +1065,11 @@ class PlotPanel(QtWidgets.QWidget):
         current_key = self.measure_channel_combo.currentData() if hasattr(self, "measure_channel_combo") else None
         blocker = QtCore.QSignalBlocker(self.measure_channel_combo)
         self.measure_channel_combo.clear()
-        for channel_name, channel in self._channels.items():
-            self.measure_channel_combo.addItem(channel["checkbox"].text(), channel_name)
+        for channel_name in self._ordered_channel_names():
+            channel = self._channels.get(channel_name)
+            if channel is None:
+                continue
+            self.measure_channel_combo.addItem(self._channel_display_name(channel_name), channel_name)
         target = self.measure_channel_combo.findData(current_key if current_key is not None else "feedback")
         if target < 0:
             target = 0
@@ -539,11 +1156,7 @@ class PlotPanel(QtWidgets.QWidget):
             for channel_name, visible in channel_state.items():
                 if channel_name not in self._channels:
                     continue
-                checkbox = self._channels[channel_name]["checkbox"]
-                blocker = QtCore.QSignalBlocker(checkbox)
-                checkbox.setChecked(bool(visible))
-                del blocker
-                self.set_channel_visible(channel_name, bool(visible))
+                self._set_channel_visible_silently(channel_name, bool(visible))
 
         if "follow_latest" in state:
             self.follow_latest_cb.setChecked(bool(state.get("follow_latest")))
@@ -589,7 +1202,8 @@ class PlotPanel(QtWidgets.QWidget):
         self.plot.showGrid(x=True, y=True, alpha=float(self._theme["plot_grid_alpha"]))
         self.plot.setLabel("bottom", "时间", units="s", color=self._theme["plot_text"])
         self.plot.setLabel("left", "数值", color=self._theme["plot_text"])
-        for axis_name in ("left", "bottom"):
+        self.plot.setLabel("right", "扰动", color=self._theme["plot_text"])
+        for axis_name in ("left", "bottom", "right"):
             axis = self.plot.getAxis(axis_name)
             axis.setPen(pg.mkPen(self._theme["plot_axis"], width=1))
             axis.setTextPen(pg.mkPen(self._theme["plot_text"]))
@@ -613,7 +1227,7 @@ class PlotPanel(QtWidgets.QWidget):
         self._update_measure_label_style(self._measure_line_b, "B", self._theme["plot_measure_b"])
 
         for marker_info in self._point_markers:
-            marker_info["marker"].setPen(pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.1))
+            marker_info["marker"].setPen(pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.6))
             marker_info["marker"].setBrush(pg.mkBrush(self._theme["plot_measure_a"]))
             marker_info["text"].setHtml(
                 self._build_annotation_html(
@@ -633,8 +1247,9 @@ class PlotPanel(QtWidgets.QWidget):
     def _build_annotation_html(self, label_text: str, x_value: float, y_value: float) -> str:
         return (
             "<div style='background-color: {bg}; color: {fg}; "
-            "padding: 6px 8px; border: 1px solid {border}; border-radius: 4px;'>"
-            "<b>{label}</b><br/>t={x:.3f}s<br/>值={y:.3f}</div>"
+            "padding: 3px 7px; border: 1px solid {border}; border-radius: 3px; "
+            "font-size: 11px; white-space: nowrap;'>"
+            "<b>{label}</b> t={x:.3f}s v={y:.3f}</div>"
         ).format(
             bg=self._theme["plot_annotation_bg"],
             fg=self._theme["plot_annotation_text"],
@@ -645,6 +1260,7 @@ class PlotPanel(QtWidgets.QWidget):
         )
 
     def _set_window_sec(self, value: float):
+        self._updating_view += 1
         self._push_view_history()
         self.window_sec = float(value)
         if self.follow_latest_cb.isChecked():
@@ -652,6 +1268,7 @@ class PlotPanel(QtWidgets.QWidget):
         else:
             self._apply_window_around_current_center()
         self._push_view_history()
+        self._updating_view -= 1
 
     def _apply_selected_preset(self):
         preset_key = self.preset_combo.currentData()
@@ -660,7 +1277,9 @@ class PlotPanel(QtWidgets.QWidget):
 
     def _on_follow_latest_changed(self, checked: bool):
         if checked:
+            self._updating_view += 1
             self._apply_latest_window()
+            self._updating_view -= 1
 
     def _on_mouse_mode_changed(self):
         self._set_mouse_mode(self.mouse_mode_combo.currentData())
@@ -678,23 +1297,31 @@ class PlotPanel(QtWidgets.QWidget):
             self.readout_label.setText("游标: --")
 
     def _on_mouse_moved(self, event):
-        if not self.cursor_cb.isChecked():
-            return
         pos = event[0] if isinstance(event, tuple) else event
         if not self.plot.plotItem.sceneBoundingRect().contains(pos):
+            if not self.cursor_cb.isChecked():
+                self.readout_label.setText("游标: --")
             return
         mouse_point = self._view_box.mapSceneToView(pos)
         x_value = mouse_point.x()
         y_value = mouse_point.y()
         self._last_mouse_x = float(x_value)
+        hovered = self._find_nearest_visible_point(pos, x_value, y_value)
+        hovered_label = hovered[1] if hovered is not None else "--"
+        if not self.cursor_cb.isChecked():
+            self.readout_label.setText(f"悬停: {hovered_label}")
+            return
         self._cursor_v_line.setPos(x_value)
         self._cursor_h_line.setPos(y_value)
         extras = self._nearest_visible_values(x_value)
         suffix = f" | {' | '.join(extras)}" if extras else ""
-        self.readout_label.setText(f"游标: t={x_value:.2f}s, y={y_value:.3f}{suffix}")
+        self.readout_label.setText(f"游标: t={x_value:.2f}s, y={y_value:.3f} | 类型={hovered_label}{suffix}")
 
     def _on_plot_clicked(self, event):
         if not self.annotation_cb.isChecked():
+            return
+        if event.button() == QtCore.Qt.RightButton:
+            self._try_remove_marker_at(event)
             return
         if event.button() != QtCore.Qt.LeftButton:
             return
@@ -702,13 +1329,34 @@ class PlotPanel(QtWidgets.QWidget):
         if not self.plot.plotItem.sceneBoundingRect().contains(pos):
             return
         mouse_point = self._view_box.mapSceneToView(pos)
-        marker = self._find_nearest_visible_point(mouse_point.x(), mouse_point.y())
+        marker = self._find_nearest_visible_point(pos, mouse_point.x(), mouse_point.y())
         if marker is None:
             return
         self._add_point_marker(*marker)
         event.accept()
 
-    def _find_nearest_visible_point(self, x_value: float, y_value: float):
+    def _try_remove_marker_at(self, event):
+        pos = event.scenePos()
+        if not self.plot.plotItem.sceneBoundingRect().contains(pos):
+            return
+        view_pos = self._view_box.mapSceneToView(pos)
+        best_idx = None
+        best_dist = float("inf")
+        threshold = (self._view_box.viewRange()[1][1] - self._view_box.viewRange()[1][0]) * 0.04
+        for i, info in enumerate(self._point_markers):
+            dx = abs(info["x"] - view_pos.x())
+            dy = abs(info["y"] - view_pos.y())
+            dist = math.hypot(dx, dy)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+        if best_idx is not None and best_dist < threshold:
+            info = self._point_markers.pop(best_idx)
+            self.plot.removeItem(info["marker"])
+            self.plot.removeItem(info["text"])
+            event.accept()
+
+    def _find_nearest_visible_point(self, scene_pos, x_value: float, y_value: float):
         best = None
         best_score = None
         for channel_name, channel in self._channels.items():
@@ -719,26 +1367,32 @@ class PlotPanel(QtWidgets.QWidget):
             nearest_index = min(range(len(xs)), key=lambda idx: abs(xs[idx] - x_value))
             px = xs[nearest_index]
             py = ys[nearest_index]
-            score = abs(px - x_value) * 0.7 + abs(py - y_value) * 0.3
+            if self._is_disturbance_channel(channel_name):
+                point = self._disturbance_view.mapViewToScene(QtCore.QPointF(float(px), float(py)))
+            else:
+                point = self._view_box.mapViewToScene(QtCore.QPointF(float(px), float(py)))
+            dx = float(point.x() - scene_pos.x())
+            dy = float(point.y() - scene_pos.y())
+            score = dx * dx + dy * dy
             if best_score is None or score < best_score:
                 best_score = score
-                best = (channel_name, channel["checkbox"].text(), float(px), float(py))
+                best = (channel_name, self._channel_display_name(channel_name), float(px), float(py))
         return best
 
     def _add_point_marker(self, channel_name: str, label_text: str, x_value: float, y_value: float):
         marker = pg.ScatterPlotItem(
             x=[x_value],
             y=[y_value],
-            symbol="o",
-            size=9,
-            pen=pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.1),
+            symbol="d",
+            size=11,
+            pen=pg.mkPen(self._to_qcolor(self._theme["plot_annotation_border"]), width=1.6),
             brush=pg.mkBrush(self._theme["plot_measure_a"]),
         )
         self.plot.addItem(marker)
 
         text_item = pg.TextItem(
             html=self._build_annotation_html(label_text, x_value, y_value),
-            anchor=(0, 1),
+            anchor=(0.5, 1.6),
         )
         text_item.setPos(x_value, y_value)
         self.plot.addItem(text_item)
@@ -772,14 +1426,14 @@ class PlotPanel(QtWidgets.QWidget):
             xs = list(channel["x"])
             ys = list(channel["y"])
             nearest_index = min(range(len(xs)), key=lambda idx: abs(xs[idx] - x_value))
-            label = channel["checkbox"].text()
+            label = self._channel_display_name(channel_name)
             parts.append(f"{label}={ys[nearest_index]:.3f}")
             if len(parts) >= 2:
                 break
         return parts
 
     def _on_manual_range_changed(self, *args):
-        if self._updating_view:
+        if self._updating_view > 0:
             return
         if self.follow_latest_cb.isChecked():
             blocker = QtCore.QSignalBlocker(self.follow_latest_cb)
@@ -794,12 +1448,14 @@ class PlotPanel(QtWidgets.QWidget):
     def _pan_x(self, factor: float):
         if not self._has_data():
             return
+        self._updating_view += 1
         self._push_view_history()
         step = self.window_sec * factor
         self._set_follow_latest(False)
         start, end = self._current_x_range()
         self._apply_time_range(start + step, end + step)
         self._push_view_history()
+        self._updating_view -= 1
 
     def _set_follow_latest(self, enabled: bool):
         blocker = QtCore.QSignalBlocker(self.follow_latest_cb)
@@ -807,20 +1463,27 @@ class PlotPanel(QtWidgets.QWidget):
         del blocker
 
     def focus_latest(self):
+        self._updating_view += 1
         self._push_view_history()
         self._set_follow_latest(True)
         self._apply_latest_window()
         self._push_view_history()
+        self._updating_view -= 1
 
     def focus_current_view(self):
-        self.focus_latest()
+        self._updating_view += 1
+        self._push_view_history()
+        if self.follow_latest_cb.isChecked():
+            self._apply_latest_window()
         self.fit_y_to_visible()
+        self._push_view_history()
+        self._updating_view -= 1
 
     def fit_y_to_visible(self):
         y_values = self._collect_visible_y_in_current_x_range()
         if not y_values:
+            self._fit_disturbance_y_to_visible()
             return
-        self._push_view_history()
         y_min = min(y_values)
         y_max = max(y_values)
         if abs(y_max - y_min) < 1e-6:
@@ -828,13 +1491,13 @@ class PlotPanel(QtWidgets.QWidget):
             y_min -= pad
             y_max += pad
         else:
-            pad = (y_max - y_min) * 0.12
+            pad = (y_max - y_min) * 0.05
             y_min -= pad
             y_max += pad
-        self._updating_view = True
+        self._updating_view += 1
         self.plot.setYRange(y_min, y_max, padding=0.0)
-        self._updating_view = False
-        self._push_view_history()
+        self._fit_disturbance_y_to_visible()
+        self._updating_view -= 1
 
     def _capture_view_state(self):
         x_range = tuple(float(v) for v in self._view_box.viewRange()[0])
@@ -863,11 +1526,12 @@ class PlotPanel(QtWidgets.QWidget):
 
     def _restore_view_state(self, state):
         self._history_navigation = True
-        self._updating_view = True
+        self._updating_view += 1
         x_range, y_range = state
         self.plot.setXRange(x_range[0], x_range[1], padding=0.0)
         self.plot.setYRange(y_range[0], y_range[1], padding=0.0)
-        self._updating_view = False
+        self._fit_disturbance_y_to_visible()
+        self._updating_view -= 1
         self._history_navigation = False
 
     def navigate_view_history(self, direction: int):
@@ -954,14 +1618,16 @@ class PlotPanel(QtWidgets.QWidget):
     def _collect_visible_y_in_current_x_range(self) -> List[float]:
         x_start, x_end = self._current_x_range()
         values: List[float] = []
-        for channel in self._channels.values():
+        for channel_name, channel in self._channels.items():
+            if self._is_disturbance_channel(channel_name):
+                continue
             if not channel["visible"] or not channel["x"]:
                 continue
             xs = list(channel["x"])
             ys = list(channel["y"])
-            scoped = [y for x, y in zip(xs, ys) if x_start <= x <= x_end]
+            scoped = [y for x, y in zip(xs, ys) if x_start <= x <= x_end and math.isfinite(float(y))]
             if not scoped:
-                scoped = ys
+                scoped = [y for y in ys if math.isfinite(float(y))]
             values.extend(scoped)
         return values
 
@@ -972,7 +1638,10 @@ class PlotPanel(QtWidgets.QWidget):
         channel["visible"] = visible
         channel["curve"].setVisible(visible)
         if visible:
-            channel["curve"].setData(list(channel["x"]), list(channel["y"]))
+            self._refresh_channel_curve(name)
+        if self._is_disturbance_channel(name):
+            self._update_disturbance_axis_visibility()
+        self._update_channel_summary()
         self.channel_toggled.emit(name, visible)
 
     def apply_preset(self, preset_key: str):
@@ -982,11 +1651,15 @@ class PlotPanel(QtWidgets.QWidget):
         for channel_name, visible in preset.items():
             if channel_name not in self._channels:
                 continue
-            checkbox = self._channels[channel_name]["checkbox"]
-            blocker = QtCore.QSignalBlocker(checkbox)
-            checkbox.setChecked(visible)
-            del blocker
-            self.set_channel_visible(channel_name, visible)
+            self._set_channel_visible_silently(channel_name, visible)
+        dynamic_visible = preset_key == "all"
+        for channel_name in self._dynamic_algorithm_channels:
+            if channel_name not in self._channels:
+                continue
+            self._set_channel_visible_silently(channel_name, dynamic_visible)
+        if preset_key == "balance":
+            self._apply_balance_runtime_visibility()
+        self._reflow_channel_layout()
 
     def append(self, t_sec: float, values: Dict[str, float]):
         if self._paused:
@@ -994,19 +1667,25 @@ class PlotPanel(QtWidgets.QWidget):
         self._latest_time = max(self._latest_time, float(t_sec))
         for name, value in values.items():
             if name not in self._channels:
+                self._ensure_dynamic_algorithm_channel(name)
+            if name not in self._channels:
                 continue
             channel = self._channels[name]
             channel["x"].append(float(t_sec))
             channel["y"].append(float(value))
 
-        for channel in self._channels.values():
+        self._updating_view += 1
+        for channel_name, channel in self._channels.items():
             if channel["visible"]:
-                channel["curve"].setData(list(channel["x"]), list(channel["y"]))
+                self._refresh_channel_curve(channel_name)
 
+        self._fit_disturbance_y_to_visible()
         if self.follow_latest_cb.isChecked():
             self._apply_latest_window()
+        self._updating_view -= 1
 
     def clear(self):
+        self._updating_view += 1
         self.clear_point_markers()
         for channel in self._channels.values():
             channel["x"].clear()
@@ -1017,20 +1696,25 @@ class PlotPanel(QtWidgets.QWidget):
         self.measure_label.setText("测量: --")
         self._set_follow_latest(True)
         self._set_default_x_range()
+        self._update_disturbance_axis_visibility()
         self._view_history.clear()
         self._view_history_index = -1
         self._push_view_history(force=True)
+        self._updating_view -= 1
 
     def clear_model_series(self):
-        for channel_name in ("vertical", "vertical_rate", "disturbance"):
+        self._updating_view += 1
+        for channel_name in ("vertical", "vertical_rate", "disturbance_sim", "disturbance_remote", *self._dynamic_algorithm_channels):
             if channel_name not in self._channels:
                 continue
             channel = self._channels[channel_name]
             channel["x"].clear()
             channel["y"].clear()
             channel["curve"].setData([], [])
+        self._fit_disturbance_y_to_visible()
         if self.follow_latest_cb.isChecked():
             self._apply_latest_window()
+        self._updating_view -= 1
 
     def set_model_context(self, model_type: str):
         vertical_label, vertical_rate_label, disturbance_label = self.MODEL_VERTICAL_LABELS.get(
@@ -1039,7 +1723,10 @@ class PlotPanel(QtWidgets.QWidget):
         )
         self._rename_channel("vertical", vertical_label)
         self._rename_channel("vertical_rate", vertical_rate_label)
-        self._rename_channel("disturbance", disturbance_label)
+        self._rename_channel("disturbance_sim", disturbance_label)
+        self._rename_channel("disturbance_remote", self._channel_display_name("disturbance_remote"))
+        self.plot.setLabel("right", disturbance_label, color=self._theme["plot_text"])
+        self._apply_algorithm_channel_labels()
         self._populate_measure_channel_combo()
         self._update_measurement_readout()
 
@@ -1047,8 +1734,12 @@ class PlotPanel(QtWidgets.QWidget):
         if channel_name not in self._channels:
             return
         channel = self._channels[channel_name]
+        control_zh, control_en = self._channel_control_labels(channel_name, new_label)
         checkbox = channel["checkbox"]
-        checkbox.setText(new_label)
+        checkbox.setText(control_zh)
+        english_label = channel.get("english_label")
+        if english_label is not None:
+            self._set_english_label_text(english_label, control_en)
         curve = channel["curve"]
         curve.opts["name"] = new_label
         legend = self.plot.plotItem.legend
@@ -1058,6 +1749,32 @@ class PlotPanel(QtWidgets.QWidget):
             if sample.item is curve:
                 label.setText(new_label)
                 break
+
+    def _apply_algorithm_channel_labels(self):
+        for channel_name in self._ordered_channel_names():
+            if channel_name not in self.ALGORITHM_CHANNELS and channel_name not in self._dynamic_algorithm_channels:
+                continue
+            if channel_name not in self._channels:
+                continue
+            self._rename_channel(channel_name, self._channel_display_name(channel_name))
+
+    def set_algorithm_channel_labels(self, label_map: Dict[str, str] | None):
+        normalized: Dict[str, str] = {}
+        if isinstance(label_map, dict):
+            for key, value in label_map.items():
+                channel_name = str(key).strip()
+                label = str(value).strip()
+                if not channel_name or not label:
+                    continue
+                if channel_name not in self._channels:
+                    self._ensure_dynamic_algorithm_channel(channel_name)
+                if channel_name in self._channels:
+                    normalized[channel_name] = label
+        self._algorithm_channel_labels = normalized
+        self._apply_algorithm_channel_labels()
+        self._reflow_channel_layout()
+        self._populate_measure_channel_combo()
+        self._update_measurement_readout()
 
     def export_plot_image(self):
         default_name = f"wave_{QtCore.QDateTime.currentDateTime().toString('yyyyMMdd_HHmmss')}.png"
@@ -1076,7 +1793,7 @@ class PlotPanel(QtWidgets.QWidget):
     def export_visible_csv(self):
         x_start, x_end = self._current_x_range()
         visible_channels = [
-            (channel_name, channel["checkbox"].text(), channel)
+            (channel_name, self._channel_display_name(channel_name), channel)
             for channel_name, channel in self._channels.items()
             if channel["visible"]
         ]
@@ -1160,6 +1877,7 @@ class PlotPanel(QtWidgets.QWidget):
             max_start = data_max - span
             start = min(max(start, data_min), max_start)
             end = start + span
-        self._updating_view = True
+        self._updating_view += 1
         self.plot.setXRange(start, end, padding=0.0)
-        self._updating_view = False
+        self._fit_disturbance_y_to_visible()
+        self._updating_view -= 1

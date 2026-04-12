@@ -1,3 +1,5 @@
+import math
+
 from PyQt5 import QtCore, QtWidgets
 
 
@@ -10,17 +12,46 @@ class StatusPanel(QtWidgets.QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setObjectName("statusPanel")
         self._build()
         self.set_model_context("rov")
 
     def _build(self):
         root = QtWidgets.QVBoxLayout(self)
-        root.setContentsMargins(0, 0, 0, 0)
+        root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(10)
 
-        self.control_card, control_grid = self._create_card("控制状态")
-        self.vertical_card, vertical_grid = self._create_card("垂向仿真")
-        self.comm_card, comm_grid = self._create_card("通信状态")
+        header_card = QtWidgets.QFrame()
+        header_card.setObjectName("panelHero")
+        header_layout = QtWidgets.QHBoxLayout(header_card)
+        header_layout.setContentsMargins(14, 12, 14, 12)
+        header_layout.setSpacing(12)
+
+        header_text_layout = QtWidgets.QVBoxLayout()
+        header_text_layout.setSpacing(2)
+        eyebrow = QtWidgets.QLabel("状态")
+        eyebrow.setObjectName("panelEyebrow")
+        title = QtWidgets.QLabel("运行状态")
+        title.setObjectName("panelHeroTitle")
+        subtitle = QtWidgets.QLabel("集中查看控制、仿真和通信链路的关键状态。")
+        subtitle.setObjectName("panelHeroSubtitle")
+        subtitle.setWordWrap(True)
+        header_text_layout.addWidget(eyebrow)
+        header_text_layout.addWidget(title)
+        header_text_layout.addWidget(subtitle)
+        header_layout.addLayout(header_text_layout, 1)
+
+        self.link_badge = QtWidgets.QLabel("正常")
+        self.link_badge.setObjectName("panelBadge")
+        self.link_badge.setAlignment(QtCore.Qt.AlignCenter)
+        self.link_badge.setMinimumWidth(86)
+        self.link_badge.setProperty("timeout", False)
+        header_layout.addWidget(self.link_badge, 0, QtCore.Qt.AlignTop)
+        root.addWidget(header_card)
+
+        self.control_card, control_grid = self._create_card("控制状态", "算法、目标值和当前控制输出。")
+        self.vertical_card, vertical_grid = self._create_card("垂向仿真", "位置、速度以及环境扰动。")
+        self.comm_card, comm_grid = self._create_card("通信状态", "收发、延迟和链路健康度。")
 
         self.algo_val = self._value_label("PID")
         self.run_val = self._value_label("空闲")
@@ -50,7 +81,7 @@ class StatusPanel(QtWidgets.QWidget):
             [
                 ("算法", self.algo_val),
                 ("运行状态", self.run_val),
-                ("参考值", self.ref_val),
+                ("目标值", self.ref_val),
                 (self.feedback_key_label, self.feedback_val),
                 ("控制输出", self.u_val),
             ],
@@ -80,13 +111,26 @@ class StatusPanel(QtWidgets.QWidget):
         root.addWidget(self.comm_card)
         root.addStretch(1)
 
-    def _create_card(self, title: str):
-        card = QtWidgets.QGroupBox(title)
-        grid = QtWidgets.QGridLayout(card)
-        grid.setContentsMargins(12, 12, 12, 12)
+    def _create_card(self, title: str, hint: str = ""):
+        card = QtWidgets.QFrame()
+        card.setObjectName("panelCard")
+        layout = QtWidgets.QVBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(8)
+        title_label = QtWidgets.QLabel(title)
+        title_label.setObjectName("panelCardTitle")
+        layout.addWidget(title_label)
+        if hint:
+            hint_label = QtWidgets.QLabel(hint)
+            hint_label.setObjectName("panelCardHint")
+            hint_label.setWordWrap(True)
+            layout.addWidget(hint_label)
+        grid = QtWidgets.QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(12)
         grid.setVerticalSpacing(7)
         grid.setColumnStretch(1, 1)
+        layout.addLayout(grid)
         return card, grid
 
     def _key_label(self, text: str):
@@ -125,12 +169,21 @@ class StatusPanel(QtWidgets.QWidget):
         self.u_val.setText(f"{u_cmd:.3f}")
 
     def update_vertical_state(self, vertical: float, vertical_rate: float, disturbance: float):
-        self.vertical_val.setText(f"{vertical:.3f}")
-        self.vertical_rate_val.setText(f"{vertical_rate:.3f}")
-        self.disturbance_val.setText(f"{disturbance:.3f}")
+        self.vertical_val.setText(self._format_value(vertical))
+        self.vertical_rate_val.setText(self._format_value(vertical_rate))
+        self.disturbance_val.setText(self._format_value(disturbance))
 
     def set_disturbance_level(self, label: str):
         self.disturbance_level_val.setText(label)
+
+    def _format_value(self, value: float) -> str:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return "--"
+        if not math.isfinite(numeric):
+            return "--"
+        return f"{numeric:.3f}"
 
     def update_comm(self, rx_frames: int, tx_frames: int, parse_errors: int, latency_ms: int):
         self.rx_val.setText(str(rx_frames))
@@ -140,3 +193,9 @@ class StatusPanel(QtWidgets.QWidget):
 
     def set_timeout(self, timeout: bool):
         self.timeout_val.setText("超时" if timeout else "正常")
+        self.link_badge.setText("超时" if timeout else "正常")
+        self.link_badge.setProperty("timeout", bool(timeout))
+        style = self.link_badge.style()
+        if style is not None:
+            style.unpolish(self.link_badge)
+            style.polish(self.link_badge)

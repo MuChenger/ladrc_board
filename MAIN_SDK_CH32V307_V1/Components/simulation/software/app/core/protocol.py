@@ -1,5 +1,6 @@
 import binascii
 import json
+import math
 import struct
 import time
 from dataclasses import asdict
@@ -41,9 +42,10 @@ def crc16_ccitt(data: bytes) -> int:
 
 def _safe_float(v: object, default: float = 0.0) -> float:
     try:
-        return float(v)
+        value = float(v)
     except (TypeError, ValueError):
         return default
+    return value if math.isfinite(value) else default
 
 
 def _safe_int(v: object, default: int = 0) -> int:
@@ -51,6 +53,17 @@ def _safe_int(v: object, default: int = 0) -> int:
         return int(float(v))
     except (TypeError, ValueError):
         return default
+
+
+def _algo_name_to_id(v: object, default: int = 0) -> int:
+    text = str(v).strip().upper()
+    mapping = {
+        "PID": 0,
+        "LADRC": 1,
+        "OPEN_LOOP": 2,
+        "OPEN LOOP": 2,
+    }
+    return mapping.get(text, default)
 
 
 def _decode_text_line(line: str) -> Optional[Dict[str, object]]:
@@ -81,11 +94,56 @@ def _decode_text_line(line: str) -> Optional[Dict[str, object]]:
             return None
         return out if _looks_like_telemetry_mapping(out) else {"line": line}
 
+    csv_numeric = _decode_vofa_csv_line(line)
+    if csv_numeric is not None:
+        return csv_numeric
+
     return {"line": line}
+
+
+def _decode_vofa_csv_line(line: str) -> Optional[Dict[str, object]]:
+    items = [item.strip() for item in line.split(",") if item.strip()]
+    if not items:
+        return None
+    try:
+        values = [float(item) for item in items]
+    except ValueError:
+        return None
+
+    if len(values) == 2:
+        return {
+            "algo_id": 1,
+            "run_state": 1,
+            "v1": values[0],
+            "v2": values[1],
+        }
+
+    if len(values) == 7:
+        return {
+            "algo_id": 1,
+            "run_state": 1,
+            "ref": values[5],
+            "feedback": values[6],
+            "v1": values[0],
+            "v2": values[1],
+            "z1": values[2],
+            "z2": values[3],
+            "z3": values[4],
+        }
+
+    return None
 
 
 def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
     mapped = {k.lower(): v for k, v in raw.items()}
+    source_names = {
+        str(k).strip().lower(): str(k).strip()
+        for k in raw.keys()
+        if str(k).strip()
+    }
+    algo_id_value = _safe_int(mapped.get("algo_id", -1), -1)
+    if algo_id_value < 0 and "algo" in mapped:
+        algo_id_value = _algo_name_to_id(mapped.get("algo"), 0)
     feedback_value = 0.0
     feedback_present = False
     if "feedback" in mapped:
@@ -102,9 +160,20 @@ def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
         u_cmd=_safe_float(mapped.get("u_cmd", mapped.get("u", 0.0))),
         ref=_safe_float(mapped.get("ref", 0.0)),
         feedback=feedback_value,
-        algo_id=_safe_int(mapped.get("algo_id", 0)),
+        algo_id=algo_id_value if algo_id_value >= 0 else 0,
         run_state=_safe_int(mapped.get("run_state", 0)),
     )
+    if "feedback" in source_names:
+        telemetry.channel_labels["feedback"] = source_names["feedback"]
+    if "u_cmd" in source_names:
+        telemetry.channel_labels["u_cmd"] = source_names["u_cmd"]
+    elif "u" in source_names:
+        telemetry.channel_labels["u_cmd"] = source_names["u"]
+    if "disturbance" in source_names:
+        telemetry.channel_labels["disturbance_remote"] = source_names["disturbance"]
+    for channel_name in ("v1", "v2", "z1", "z2", "z3"):
+        if channel_name in source_names:
+            telemetry.channel_labels[channel_name] = source_names[channel_name]
     known = {
         "timestamp",
         "timestamp_ms",
@@ -116,6 +185,7 @@ def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
         "ref",
         "feedback",
         "depth",
+        "algo",
         "algo_id",
         "run_state",
     }
@@ -123,6 +193,12 @@ def dict_to_telemetry(raw: Dict[str, object]) -> Telemetry:
         if k in known:
             continue
         telemetry.extra[k] = _safe_float(v, 0.0)
+        source_name = source_names.get(k)
+        if isinstance(source_name, str) and source_name.strip():
+            telemetry.channel_labels[k] = source_name.strip()
+    sim_mode_value = _safe_int(mapped.get("sim_mode", telemetry.extra.get("sim_mode", 2)), 2)
+    if telemetry.algo_id == 1 and sim_mode_value == 0 and "v1" in telemetry.extra:
+        telemetry.feedback = _safe_float(telemetry.extra.get("v1", telemetry.feedback), telemetry.feedback)
     if not feedback_present:
         telemetry.extra["_feedback_missing"] = 1.0
 
@@ -276,6 +352,7 @@ class StreamParser:
 def telemetry_to_record_dict(t: Telemetry) -> Dict[str, object]:
     out = asdict(t)
     extra = {k: v for k, v in out.pop("extra", {}).items() if not str(k).startswith("_")}
+    out.pop("channel_labels", None)
     out.update(extra)
     return out
 

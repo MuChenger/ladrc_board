@@ -165,6 +165,21 @@ static int timer_gpio_init(void)
 INIT_DEVICE_EXPORT(timer_gpio_init);
 #endif /* SDK_USING_TIM2 || SDK_USING_TIM6 || SDK_USING_TIM7 */
 
+#if defined(SDK_USING_USART2) || defined(SDK_USING_UART4) || defined(SDK_USING_UART6) || defined(SDK_USING_UART7) || defined(SDK_USING_UART8)
+/**
+ * @brief   Initialize uart GPIO resources.
+ *
+ * @return  0 on success.
+ */
+static int uart_gpio_init(void)
+{
+    UART_GPIO_Init();
+    log_i("UART init success.");
+    return 0;
+}
+INIT_DEVICE_EXPORT(uart_gpio_init);
+#endif /* SDK_USING_USART2 || SDK_USING_UART4 || SDK_USING_UART6 || SDK_USING_UART7 || SDK_USING_UART8 */
+
 #ifdef SDK_USING_SIMULATION
 /**
  * @brief   Initialize the simulation module.

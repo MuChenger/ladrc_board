@@ -34,12 +34,19 @@ parse_command(cmds, sizeof(cmds) / sizeof(cmds[0]));
 出错会打印：`missing '#'`、`length overflow`、`empty command type`、`Unknown command type` 等信息。
 
 ## LADRC 命令速查（`sim_ladrc.c`）
-- `#r:<n>` -> `r = n / 10.0`
-- `#h:<n>` -> `h = n / 1000.0`
-- `#wo:<n>` -> `w0 = n`
-- `#wc:<n>` -> `wc = n`
-- `#bo:<n>` -> `b0 = n / 10.0`
-- `#init:<n>` -> `init_val = n / 10.0`，并同步 `real_val`
-- `#expe:<n>` -> `expect_val = n / 10.0`
+- `#r:<value>` -> `r = value`
+- `#h:<value>` -> `h = value`
+- `#wo:<value>` -> `w0 = value`
+- `#wc:<value>` -> `wc = value`
+- `#bo:<value>` -> `b0 = value`
+- `#init:<value>` -> `init_val = value`，并同步 `real_val`
+- `#expe:<value>` -> `expect_val = value`
 - `#run:0|1|other` -> `TD_MODE | LOOP_MODE | NULL_MODE`
 - `#rst:1` -> 重置 LADRC 参数与仿真状态
+- `#stat:1` -> 立即输出一帧当前 LADRC 状态
+
+## 上位机联调输出
+- 当前 LADRC 仿真采用“命令触发状态输出”模式，不做周期主动上报
+- 上位机可通过 `#stat:1` 主动查询一帧结构化遥测文本；`#run` / `#rst` 也会立即返回当前状态
+- 典型字段包括：`timestamp`、`algo_id`、`run_state`、`sim_mode`、`ref`、`feedback`、`u_cmd`、`v1`、`v2`、`z1`、`z2`、`z3`、`r`、`h`、`w0`、`wc`、`b0`、`init`
+- 为兼容旧工具链，上位机仍保留对旧版 VOFA 风格 `2` 列 / `7` 列纯 CSV 输出的兜底解析

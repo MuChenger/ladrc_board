@@ -9,6 +9,7 @@ class AppConfig:
     app_tagline: str = "控制算法联调、波形分析与三维仿真一体化工具"
     ui_refresh_hz: int = 30
     sim_hz: int = 100
+    ladrc_status_poll_hz: int = 10
     serial_tx_hz: int = 25
     serial_timeout_s: float = 0.05
     communication_timeout_ms: int = 300
